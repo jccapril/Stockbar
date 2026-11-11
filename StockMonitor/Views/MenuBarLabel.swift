@@ -6,7 +6,8 @@ struct MenuBarLabel: View {
     private var mode: String { appState.statusBarStockId }
 
     var body: some View {
-        let isPnl = mode == "__daily_pnl__" || mode == "__total_pnl__" || mode == "__both_pnl__"
+        let isPnl = !appState.isStatusBarRotating &&
+            (mode == "__daily_pnl__" || mode == "__total_pnl__" || mode == "__both_pnl__")
 
         HStack(spacing: 4) {
             if !isPnl {
@@ -26,9 +27,12 @@ struct MenuBarLabel: View {
                 case .priceAndPercent: "\(quote.formattedPrice) \(quote.formattedPercent)"
                 }
                 // 合为一个标题，确保组合模式的两项行情都能显示。
-                Text(title)
+                Text(appState.isStatusBarRotating ? "\(appState.statusBarStock?.name ?? "") \(title)" : title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(appState.quoteColor(for: quote))
+            } else if appState.isStatusBarRotating, let stock = appState.statusBarStock {
+                Text("\(stock.name) --")
+                    .font(.system(size: 12))
             }
 
             if appState.hasError {

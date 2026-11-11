@@ -283,6 +283,15 @@ struct DropdownView: View {
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(StatusPanelObserver { focused in
+            let wasOpen = appState.isStatusPanelOpen
+            appState.isStatusPanelOpen = focused
+            // 每次打开快照一次，随后保留用户的返回列表、切换股票等操作。
+            if focused, !wasOpen, appState.isStatusBarRotating {
+                showSettings = false
+                selectedStock = appState.statusBarStock
+            }
+        })
     }
 }
 

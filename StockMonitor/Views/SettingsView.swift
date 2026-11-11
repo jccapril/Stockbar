@@ -52,10 +52,25 @@ struct SettingsView: View {
                             Text("\(s.name)  \(s.id)").tag(s.id)
                         }
                     }.pickerStyle(.menu)
+                    .disabled(appState.config.statusBarRotationEnabled)
+                    Toggle("轮播置顶股票", isOn: $appState.config.statusBarRotationEnabled)
+                    if appState.config.statusBarRotationEnabled {
+                        Picker("轮播间隔", selection: $appState.config.statusBarRotationInterval) {
+                            ForEach(AppSettings.validRotationIntervals, id: \.self) { seconds in
+                                Text("\(seconds) 秒").tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Text(appState.rotationStocks.isEmpty
+                             ? "请先在列表中置顶股票。暂无置顶时沿用原显示方式。"
+                             : "按置顶顺序轮播；点击查看当前股票走势，面板打开时暂停轮播。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 // 行情格式只适用于股票，盈亏和不显示模式没有此选项。
-                if !appState.statusBarStockId.hasPrefix("__") {
+                if appState.config.statusBarRotationEnabled || !appState.statusBarStockId.hasPrefix("__") {
                     section("状态栏行情格式") {
                         Picker("", selection: Binding(
                             get: { appState.config.statusBarQuoteDisplay },

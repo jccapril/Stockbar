@@ -78,6 +78,8 @@ enum StatusBarQuoteDisplay: String, Codable, CaseIterable {
 struct AppSettings {
     var statusBarStockId: String         = ""
     var statusBarQuoteDisplay: StatusBarQuoteDisplay = .price
+    var statusBarRotationEnabled = false
+    var statusBarRotationInterval = 5
     var refreshInterval: Int             = 5
     var colorScheme: ColorTheme          = .chinese
     var displayCurrency: DisplayCurrency = .cny
@@ -87,6 +89,7 @@ struct AppSettings {
     var activeWatchlistId: String?    // nil = 真实持仓
 
     static let validRefreshIntervals = [3, 5, 10, 30]
+    static let validRotationIntervals = [3, 5, 10, 15, 30, 60]
 
     var upColorName: String   { colorScheme == .chinese ? "upRed"   : "upGreen" }
     var downColorName: String { colorScheme == .chinese ? "downGreen" : "downRed" }
@@ -96,12 +99,16 @@ struct AppSettings {
 extension AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
         case statusBarQuoteDisplay
+        case statusBarRotationEnabled, statusBarRotationInterval
         case statusBarStockId, refreshInterval, colorScheme, displayCurrency, sortRule, usPriceMode, groupHoldings,
              activeWatchlistId
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        statusBarRotationEnabled = try c.decodeIfPresent(Bool.self, forKey: .statusBarRotationEnabled) ?? false
+        let rotationInterval = try c.decodeIfPresent(Int.self, forKey: .statusBarRotationInterval) ?? 5
+        statusBarRotationInterval = Self.validRotationIntervals.contains(rotationInterval) ? rotationInterval : 5
         statusBarQuoteDisplay = (try? c.decodeIfPresent(StatusBarQuoteDisplay.self, forKey: .statusBarQuoteDisplay)) ??
             .price
         statusBarStockId   = (try? c.decodeIfPresent(String.self,          forKey: .statusBarStockId))    ?? ""

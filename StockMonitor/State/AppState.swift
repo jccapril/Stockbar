@@ -14,7 +14,13 @@ final class AppState: ObservableObject {
     // MARK: - 持久化（settings.json）
 
     @Published var config: AppSettings = AppSettings() {
-        didSet { saveSettings(config) }
+        didSet {
+            saveSettings(config)
+            if oldValue.statusBarRotationEnabled != config.statusBarRotationEnabled ||
+                oldValue.statusBarRotationInterval != config.statusBarRotationInterval {
+                configureStatusBarRotation()
+            }
+        }
     }
 
     // MARK: - 持久化（stocks.json）
@@ -25,6 +31,9 @@ final class AppState: ObservableObject {
             let removed = Set(oldValue.map(\.id)).subtracting(stocks.map(\.id))
                 .subtracting(Self.marketIndices.map(\.id))
             priceAlerts.removeStocks(removed)
+            if oldValue.filter(\.isPinned).map(\.id) != stocks.filter(\.isPinned).map(\.id) {
+                configureStatusBarRotation()
+            }
         }
     }
 
@@ -40,6 +49,9 @@ final class AppState: ObservableObject {
     @Published var expandedChartFiveDays = false
     @Published var selectedAlertStock: Stock?
     let priceAlerts: PriceAlertStore
+    @Published var rotatingStockId: String?
+    var isStatusPanelOpen = false
+    var rotationTimer: Timer?
 
     @Published var quotes: [String: Quote]      = [:]
     @Published var exchangeRates: ExchangeRates = ExchangeRates()
@@ -185,6 +197,7 @@ final class AppState: ObservableObject {
         appLogger.info("AppState stocks loaded: \(stockCount)")
         logToFile("AppState stocks loaded: \(stockCount)")
         setupScheduler()
+        configureStatusBarRotation()
         appLogger.info("AppState init complete")
         logToFile("AppState init complete")
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -353,6 +366,9 @@ final class AppState: ObservableObject {
     // MARK: - 状态栏
 
     var statusBarStock: Stock? {
+        if isStatusBarRotating {
+            return rotationStocks.first(where: { $0.id == rotatingStockId }) ?? rotationStocks.first
+        }
         if statusBarStockId.hasPrefix("__") { return nil }
         return stocks.first(where: { $0.id == statusBarStockId }) ?? stocks.first
     }
