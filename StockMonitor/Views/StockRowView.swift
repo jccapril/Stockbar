@@ -7,6 +7,7 @@ struct StockRowView: View {
     var onReorderDragChanged: (DragGesture.Value) -> Void
     var onReorderDragEnded: (CGPoint) -> Void
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -57,6 +58,13 @@ struct StockRowView: View {
                 .onTapGesture { onTap?() }
 
             Menu {
+                Button {
+                    appState.selectedAlertStock = stock
+                    openWindow(id: "price-alerts")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("价格提醒", systemImage: "bell")
+                }
                 Button {
                     appState.stocks = appState.stocks.map { item in
                         var updated = item

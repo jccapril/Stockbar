@@ -20,7 +20,12 @@ final class AppState: ObservableObject {
     // MARK: - 持久化（stocks.json）
 
     @Published var stocks: [Stock] = [] {
-        didSet { saveStocks(stocks) }
+        didSet {
+            saveStocks(stocks)
+            let removed = Set(oldValue.map(\.id)).subtracting(stocks.map(\.id))
+                .subtracting(Self.marketIndices.map(\.id))
+            priceAlerts.removeStocks(removed)
+        }
     }
 
     // MARK: - 持久化（watchlists.json）
@@ -33,6 +38,8 @@ final class AppState: ObservableObject {
 
     @Published var expandedChartStock: Stock?
     @Published var expandedChartFiveDays = false
+    @Published var selectedAlertStock: Stock?
+    let priceAlerts: PriceAlertStore
 
     @Published var quotes: [String: Quote]      = [:]
     @Published var exchangeRates: ExchangeRates = ExchangeRates()
@@ -168,6 +175,7 @@ final class AppState: ObservableObject {
     private var scheduler: RefreshScheduler?
 
     init() {
+        priceAlerts = PriceAlertStore(directory: Self.appSupportDir)
         appLogger.info("AppState init start")
         logToFile("AppState init start")
         _stocks     = Published(wrappedValue: Self.loadStocks())
@@ -241,6 +249,8 @@ final class AppState: ObservableObject {
             exchangeRates  = rates
             lastUpdateTime = Date()
             syncStockNamesFromQuotes()
+            let freshQuotes = merged.merging(h) { _, new in new }.merging(kr) { _, new in new }
+            await priceAlerts.evaluate(freshQuotes)
         } catch {
             hasError = true
         }

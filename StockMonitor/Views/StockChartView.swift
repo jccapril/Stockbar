@@ -112,6 +112,17 @@ struct StockChartView: View {
 
             Spacer()
 
+            Button {
+                appState.selectedAlertStock = stock
+                openWindow(id: "price-alerts")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Image(systemName: "bell")
+            }
+            .buttonStyle(.plain)
+            .help("价格提醒")
+            .accessibilityLabel("价格提醒")
+
             if !isExpanded {
                 Button {
                     appState.expandedChartStock = stock

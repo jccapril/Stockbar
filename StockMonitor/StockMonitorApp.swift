@@ -1,11 +1,21 @@
 import AppKit
 import os
 import SwiftUI
+import UserNotifications
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         appLogger.info("applicationDidFinishLaunching")
         logToFile("applicationDidFinishLaunching — pid=\(ProcessInfo.processInfo.processIdentifier)")
+    }
+
+    func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
+    ) {
+        completionHandler([.banner, .list, .sound])
     }
 
     func applicationWillTerminate(_: Notification) {
@@ -56,6 +66,17 @@ struct StockbarApp: App {
             }
         }
         .defaultSize(width: 900, height: 540)
+        .windowResizability(.contentMinSize)
+
+        Window("价格提醒", id: "price-alerts") {
+            if let stock = appState.selectedAlertStock {
+                PriceAlertView(stock: stock)
+                    .id(stock.id)
+                    .environmentObject(appState)
+                    .environmentObject(appState.priceAlerts)
+            }
+        }
+        .defaultSize(width: 580, height: 420)
         .windowResizability(.contentMinSize)
     }
 }
