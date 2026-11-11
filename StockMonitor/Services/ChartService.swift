@@ -4,9 +4,94 @@ struct MinutePoint: Identifiable {
     let id: Int       // 分钟偏移量（用作 x 轴坐标，美股以前日 20:00 ET 为 0）
     let time: String  // "09:30"
     let price: Double
+    var day: String = "" // 五日视图的交易日期，格式 yyyyMMdd
 }
 
-final class ChartService {
+enum ChartService {
+
+    static func fetchFiveDay(stock: Stock) async throws -> (points: [MinutePoint], preClose: Double) {
+        let isYahoo = stock.market == .usStock || stock.market == .krStock
+        let urlString: String
+        if isYahoo {
+            // 海外市场沿用 Yahoo，五日视图使用正常交易时段的五分钟采样。
+            let symbol = stock.market == .krStock
+                ? KoreanStockID.toYahooSymbol(stock.id)
+                : stock.id.replacingOccurrences(of: "usr_", with: "").replacingOccurrences(of: "$", with: "-")
+                    .uppercased()
+            guard let symbol else { throw URLError(.badURL) }
+            urlString = "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=5m&range=5d"
+        } else {
+            urlString = "https://web.ifzq.gtimg.cn/appstock/app/day/query?code=\(stock.id)"
+        }
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try isYahoo ? parseYahooFiveDay(data) : parseTencentFiveDay(data, code: stock.id)
+    }
+
+    static func parseTencentFiveDay(_ data: Data, code: String) throws -> (points: [MinutePoint], preClose: Double) {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let payload = root["data"] as? [String: Any],
+              let item = payload[code] as? [String: Any],
+              let rawDays = item["data"] as? [[String: Any]] else { throw URLError(.cannotParseResponse) }
+        var days: [(date: String, lines: [String], preClose: Double)] = []
+        for day in rawDays {
+            // 接口按日期倒序返回，先验证并归一化，再按交易日正序绘制。
+            guard let date = day["date"] as? String, date.count == 8,
+                  let lines = day["data"] as? [String],
+                  let previous = day["prec"] as? String, let preClose = Double(previous), preClose > 0
+            else { throw URLError(.cannotParseResponse) }
+            days.append((date, lines, preClose))
+        }
+        days.sort { $0.date < $1.date }
+        let recentDays = days.suffix(5)
+        var points: [MinutePoint] = []
+        for day in recentDays {
+            for line in day.lines {
+                let fields = line.split(separator: " ")
+                // 无效行情点不参与曲线；整段无有效点则向界面报告失败。
+                guard fields.count >= 2, let price = Double(fields[1]), price > 0 else { continue }
+                points.append(MinutePoint(id: points.count, time: String(fields[0]), price: price, day: day.date))
+            }
+        }
+        guard !points.isEmpty, let first = recentDays.first else { throw URLError(.cannotParseResponse) }
+        return (points, first.preClose)
+    }
+
+    static func parseYahooFiveDay(_ data: Data) throws -> (points: [MinutePoint], preClose: Double) {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let chart = root["chart"] as? [String: Any],
+              let results = chart["result"] as? [[String: Any]], let result = results.first,
+              let meta = result["meta"] as? [String: Any],
+              let zone = meta["exchangeTimezoneName"] as? String, let timeZone = TimeZone(identifier: zone),
+              let preClose = meta["chartPreviousClose"] as? Double, preClose > 0,
+              let timestamps = result["timestamp"] as? [Double],
+              let indicators = result["indicators"] as? [String: Any],
+              let quotes = indicators["quote"] as? [[String: Any]],
+              let closes = quotes.first?["close"] as? [Any], timestamps.count == closes.count
+        else { throw URLError(.cannotParseResponse) }
+        let dateFormat = DateFormatter()
+        dateFormat.timeZone = timeZone
+        dateFormat.dateFormat = "yyyyMMdd"
+        let timeFormat = DateFormatter()
+        timeFormat.timeZone = timeZone
+        timeFormat.dateFormat = "HH:mm"
+        var points: [MinutePoint] = []
+        for (timestamp, close) in zip(timestamps, closes) {
+            // Yahoo 的空采样以 null 表示，不将缺失价格画成零。
+            guard let price = close as? Double, price > 0 else { continue }
+            let date = Date(timeIntervalSince1970: timestamp)
+            points.append(MinutePoint(
+                id: points.count,
+                time: timeFormat.string(from: date),
+                price: price,
+                day: dateFormat.string(from: date),
+            ))
+        }
+        guard !points.isEmpty else { throw URLError(.cannotParseResponse) }
+        return (points, preClose)
+    }
 
     /// 获取当日分时数据
     static func fetchIntraday(stock: Stock) async throws -> (points: [MinutePoint], preClose: Double) {

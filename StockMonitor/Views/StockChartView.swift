@@ -1,5 +1,5 @@
-import SwiftUI
 import Charts
+import SwiftUI
 
 struct StockChartView: View {
     let stock: Stock
@@ -10,6 +10,12 @@ struct StockChartView: View {
     @State private var preClose: Double = 0
     @State private var isLoading = true
     @State private var loadFailed = false
+    @State private var period: Period = .intraday
+
+    private enum Period: String, CaseIterable {
+        case intraday = "分时"
+        case fiveDays = "五日"
+    }
 
     private var quote: Quote? { appState.quotes[stock.id] }
 
@@ -18,6 +24,8 @@ struct StockChartView: View {
     // 港股：09:30-12:00 + 13:00-16:00 = 330 分钟
     // 美股：04:00-20:00 = 960 分钟（含盘前+正常+盘后）
     private var fullDayRange: ClosedRange<Int> {
+        // 五日数据已按交易日连接，跳过周末和夜间空档。
+        if period == .fiveDays { return 0...max(points.last?.id ?? 0, 1) }
         switch stock.market {
         case .aStock:  return 0...239
         case .hkStock: return 0...329
@@ -28,6 +36,14 @@ struct StockChartView: View {
 
     // 对应各市场的时间标签（index → 时间字符串）
     private var xAxisLabels: [(Int, String)] {
+        if period == .fiveDays {
+            let days = Dictionary(grouping: points, by: \.day)
+            return days.keys.sorted().compactMap { day in
+                guard let items = days[day], let first = items.first, let last = items.last else { return nil }
+                let monthDay = day.suffix(4)
+                return ((first.id + last.id) / 2, "\(monthDay.prefix(2))/\(monthDay.suffix(2))")
+            }
+        }
         switch stock.market {
         case .aStock:
             return [(0, "09:30"), (60, "10:30"), (120, "13:00"), (180, "14:00"), (239, "15:00")]
@@ -45,14 +61,22 @@ struct StockChartView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerView
+            Picker("走势图周期", selection: $period) {
+                ForEach(Period.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 6)
             Divider()
             chartAreaView
                 .frame(height: 200)
-            if !isLoading && !loadFailed && !points.isEmpty {
+            if !isLoading, !loadFailed, !points.isEmpty {
                 statsRow
             }
         }
-        .task { await load() }
+        .task(id: period) { await load() }
     }
 
     // MARK: - 顶部信息栏
@@ -99,7 +123,7 @@ struct StockChartView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if loadFailed || points.isEmpty {
-            Text("暂无分时数据")
+            Text(period == .fiveDays ? "暂无五日数据" : "暂无分时数据")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -131,7 +155,7 @@ struct StockChartView: View {
             : Color(appState.config.downColorName)
 
         let labelPositions = xAxisLabels.map(\.0)
-        let isUS = stock.market == .usStock
+        let isUS = stock.market == .usStock && period == .intraday
         let labelY = yMin + (yMax - yMin) * 0.88
 
         return Chart {
@@ -142,7 +166,7 @@ struct StockChartView: View {
                         xStart: .value("xs", s.start),
                         xEnd:   .value("xe", s.end),
                         yStart: .value("ys", yMin),
-                        yEnd:   .value("ye", yMax)
+                        yEnd:   .value("ye", yMax),
                     )
                     .foregroundStyle(s.color.opacity(0.07))
                 }
@@ -150,7 +174,7 @@ struct StockChartView: View {
                 ForEach(usSessions, id: \.name) { s in
                     PointMark(
                         x: .value("t", (s.start + s.end) / 2),
-                        y: .value("price", labelY)
+                        y: .value("price", labelY),
                     )
                     .symbolSize(0)
                     .annotation(position: .overlay) {
@@ -170,7 +194,8 @@ struct StockChartView: View {
             ForEach(points) { p in
                 LineMark(
                     x: .value("t", p.id),
-                    y: .value("price", p.price)
+                    y: .value("price", p.price),
+                    series: .value("交易日", p.day),
                 )
                 .interpolationMethod(.linear)
                 .foregroundStyle(lineColor)
@@ -182,7 +207,8 @@ struct StockChartView: View {
                 AreaMark(
                     x: .value("t", p.id),
                     yStart: .value("base", yMin),
-                    yEnd: .value("price", p.price)
+                    yEnd: .value("price", p.price),
+                    series: .value("交易日", p.day),
                 )
                 .foregroundStyle(lineColor.opacity(0.12))
             }
@@ -220,15 +246,18 @@ struct StockChartView: View {
     private var statsRow: some View {
         let prices = points.map(\.price)
         return HStack(spacing: 0) {
-            statItem(label: "昨收", value: fmt(preClose))
+            statItem(label: period == .fiveDays ? "基准" : "昨收", value: fmt(preClose))
             Spacer()
-            statItem(label: "今开", value: fmt(points.first?.price ?? 0))
+            statItem(label: period == .fiveDays ? "首价" : "今开", value: fmt(points.first?.price ?? 0))
             Spacer()
             statItem(label: "最高", value: fmt(prices.max() ?? 0))
             Spacer()
             statItem(label: "最低", value: fmt(prices.min() ?? 0))
             Spacer()
-            statItem(label: "现价", value: fmt(quote?.price ?? 0))
+            statItem(
+                label: period == .fiveDays ? "末价" : "现价",
+                value: fmt(period == .fiveDays ? points.last?.price ?? 0 : quote?.price ?? 0),
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
@@ -253,11 +282,17 @@ struct StockChartView: View {
     private func load() async {
         isLoading = true
         loadFailed = false
+        points = []
         do {
-            let (pts, pc) = try await ChartService.fetchIntraday(stock: stock)
-            self.points = pts
-            self.preClose = pc > 0 ? pc : (quote?.previousClose ?? 0)
+            let (pts, pc) = try await (period == .fiveDays
+                ? ChartService.fetchFiveDay(stock: stock)
+                : ChartService.fetchIntraday(stock: stock))
+            // 切换周期会取消旧任务，旧响应不得覆盖新周期的状态。
+            try Task.checkCancellation()
+            points = pts
+            preClose = pc > 0 ? pc : (quote?.previousClose ?? 0)
         } catch {
+            if Task.isCancelled { return }
             loadFailed = true
         }
         isLoading = false
