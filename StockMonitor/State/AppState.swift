@@ -46,7 +46,7 @@ final class AppState: ObservableObject {
     // MARK: - 实时状态
 
     @Published var expandedChartStock: Stock?
-    @Published var expandedChartFiveDays = false
+    @Published var expandedChartPeriod: ChartPeriod = .intraday
     @Published var selectedAlertStock: Stock?
     @Published var holdingEditorStock: Stock?
     @Published var holdingEditorWatchlistId: String?

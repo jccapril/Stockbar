@@ -12,19 +12,19 @@ struct StockChartView: View {
     @State private var preClose: Double = 0
     @State private var isLoading = true
     @State private var loadFailed = false
-    @State private var period: Period = .intraday
+    @State private var period: ChartPeriod = .intraday
     @State private var hoveredPoint: MinutePoint?
 
-    private enum Period: String, CaseIterable {
-        case intraday = "分时"
-        case fiveDays = "五日"
-    }
-
-    init(stock: Stock, onClose: @escaping () -> Void, isExpanded: Bool = false, fiveDays: Bool = false) {
+    init(
+        stock: Stock,
+        onClose: @escaping () -> Void,
+        isExpanded: Bool = false,
+        initialPeriod: ChartPeriod = .intraday,
+    ) {
         self.stock = stock
         self.onClose = onClose
         self.isExpanded = isExpanded
-        _period = State(initialValue: fiveDays ? .fiveDays : .intraday)
+        _period = State(initialValue: initialPeriod)
     }
 
     private var quote: Quote? { appState.quotes[stock.id] }
@@ -72,7 +72,7 @@ struct StockChartView: View {
         VStack(spacing: 0) {
             headerView
             Picker("走势图周期", selection: $period) {
-                ForEach(Period.allCases, id: \.self) { option in
+                ForEach(ChartPeriod.allCases, id: \.self) { option in
                     Text(option.rawValue).tag(option)
                 }
             }
@@ -82,7 +82,7 @@ struct StockChartView: View {
             Divider()
             chartAreaView
                 .frame(minHeight: isExpanded ? 280 : 200, maxHeight: isExpanded ? .infinity : 200)
-            if !isLoading, !loadFailed, !points.isEmpty {
+            if period.candlePeriod == nil, !isLoading, !loadFailed, !points.isEmpty {
                 statsRow
             }
         }
@@ -126,7 +126,7 @@ struct StockChartView: View {
             if !isExpanded {
                 Button {
                     appState.expandedChartStock = stock
-                    appState.expandedChartFiveDays = period == .fiveDays
+                    appState.expandedChartPeriod = period
                     openWindow(id: "expanded-chart")
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
@@ -156,7 +156,9 @@ struct StockChartView: View {
 
     @ViewBuilder
     private var chartAreaView: some View {
-        if isLoading {
+        if let candlePeriod = period.candlePeriod {
+            CandlestickChartView(stock: stock, period: candlePeriod)
+        } else if isLoading {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if loadFailed || points.isEmpty {
@@ -399,6 +401,8 @@ struct StockChartView: View {
     // MARK: - 数据加载
 
     private func load() async {
+        // K 线由独立视图加载，分时请求随周期切换取消。
+        guard period.candlePeriod == nil else { return }
         isLoading = true
         loadFailed = false
         points = []

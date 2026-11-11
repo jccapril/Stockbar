@@ -57,9 +57,9 @@ struct StockbarApp: App {
                     stock: stock,
                     onClose: {},
                     isExpanded: true,
-                    fiveDays: appState.expandedChartFiveDays,
+                    initialPeriod: appState.expandedChartPeriod,
                 )
-                    .id("\(stock.id)-\(appState.expandedChartFiveDays)")
+                    .id("\(stock.id)-\(appState.expandedChartPeriod.rawValue)")
                     .environmentObject(appState)
                     .padding(16)
                     .frame(minWidth: 640, minHeight: 400)
