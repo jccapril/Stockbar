@@ -48,6 +48,8 @@ final class AppState: ObservableObject {
     @Published var expandedChartStock: Stock?
     @Published var expandedChartFiveDays = false
     @Published var selectedAlertStock: Stock?
+    @Published var holdingEditorStock: Stock?
+    @Published var holdingEditorWatchlistId: String?
     let priceAlerts: PriceAlertStore
     @Published var rotatingStockId: String?
     var isStatusPanelOpen = false

@@ -78,5 +78,22 @@ struct StockbarApp: App {
         }
         .defaultSize(width: 580, height: 420)
         .windowResizability(.contentMinSize)
+
+        Window("新增股票", id: "add-stock") {
+            ScrollView { AddStockView().padding(20) }
+                .environmentObject(appState)
+                .frame(minWidth: 420, minHeight: 320)
+        }
+        .defaultSize(width: 460, height: 480)
+        .windowResizability(.contentMinSize)
+
+        Window("设置持仓", id: "holding-editor") {
+            if let stock = appState.holdingEditorStock {
+                HoldingEditorWindow(stock: stock, watchlistId: appState.holdingEditorWatchlistId)
+                    .id("\(stock.id)-\(appState.holdingEditorWatchlistId ?? "real")")
+                    .environmentObject(appState)
+            }
+        }
+        .windowResizability(.contentSize)
     }
 }

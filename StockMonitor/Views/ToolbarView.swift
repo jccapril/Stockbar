@@ -2,11 +2,21 @@ import SwiftUI
 
 struct ToolbarView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     @Binding var showSettings: Bool
     @Binding var sortByChange: Bool
 
     var body: some View {
         HStack {
+            Button {
+                openWindow(id: "add-stock")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Label("新增", systemImage: "plus").font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .help("新增股票")
+            Spacer()
             Button {
                 appState.forceRefresh()
             } label: {
@@ -18,7 +28,10 @@ struct ToolbarView: View {
             Spacer()
 
             Button { sortByChange.toggle() } label: {
-                Label("排序", systemImage: sortByChange ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+                Label(
+                    "排序",
+                    systemImage: sortByChange ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle",
+                )
                     .font(.system(size: 12))
                     .foregroundColor(sortByChange ? .accentColor : .primary)
             }

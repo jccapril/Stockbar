@@ -59,6 +59,14 @@ struct StockRowView: View {
 
             Menu {
                 Button {
+                    appState.holdingEditorStock = stock
+                    appState.holdingEditorWatchlistId = appState.config.activeWatchlistId
+                    openWindow(id: "holding-editor")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("设置持仓", systemImage: "pencil")
+                }
+                Button {
                     appState.selectedAlertStock = stock
                     openWindow(id: "price-alerts")
                     NSApp.activate(ignoringOtherApps: true)

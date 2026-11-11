@@ -266,7 +266,7 @@ struct DropdownView: View {
                         // 切换指数时重建图表状态，并重新请求对应的分时数据。
                         .id(stock.id)
                 } else if groupedStocks.isEmpty {
-                    Text("暂无股票，点击设置添加")
+                    Text("暂无股票，点击下方“新增”添加")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
