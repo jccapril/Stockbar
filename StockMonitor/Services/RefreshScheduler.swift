@@ -15,9 +15,11 @@ final class RefreshScheduler {
         stop()
         pendingTask = Task { await onRefresh() }
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            guard Self.isTradingHour() else { return }
-            self.pendingTask = Task { await self.onRefresh() }
+            Task { @MainActor [weak self] in
+                // 以实际执行时刻判断，午休和收盘后不再发起自动刷新。
+                guard let self, Self.isTradingHour() else { return }
+                pendingTask = Task { await self.onRefresh() }
+            }
         }
     }
 
@@ -41,7 +43,7 @@ final class RefreshScheduler {
         return c
     }()
 
-    /// 任一市场处于交易时间段则返回 true；周末始终返回 false
+    /// 仅 A 股常规交易时段允许自动刷新；午休、收盘后及周末停止轮询。
     /// 注：不维护节假日日历，节假日由接口返回不变的数据来体现
     nonisolated static func isTradingHour(at date: Date = Date()) -> Bool {
         let cal = shanghaiCalendar
@@ -53,20 +55,7 @@ final class RefreshScheduler {
         let minute = cal.component(.minute, from: date)
         let t = hour * 60 + minute
 
-        // A股：09:25–11:30, 13:00–15:00
-        if (9*60+25  ... 11*60+30).contains(t) { return true }
-        if (13*60    ... 15*60   ).contains(t) { return true }
-
-        // 港股：09:30–11:59, 13:00–16:00
-        if (9*60+30  ... 12*60-1 ).contains(t) { return true }
-        if (13*60    ... 16*60   ).contains(t) { return true }
-
-        // 美股：夜盘+盘前+正盘+盘后几乎覆盖全天（北京时间）
-        // 夜盘 08:00-16:00, 盘前 16:00-21:30, 正盘 21:30-04:00, 盘后 04:00-08:00
-        // 韩股：北京时间 08:00-14:30（KST 09:00-15:30），与美股夜盘窗口重叠
-        // 工作日已在上方过滤周末，此处直接返回 true
-        return true
-
-        return false
+        return (9 * 60 + 30..<11 * 60 + 30).contains(t)
+            || (13 * 60..<15 * 60).contains(t)
     }
 }

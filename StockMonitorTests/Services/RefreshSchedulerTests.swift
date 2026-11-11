@@ -26,11 +26,10 @@ final class RefreshSchedulerTests: XCTestCase {
         XCTAssertTrue(RefreshScheduler.isTradingHour(at: d))
     }
 
-    // A股午休时段：北京 12:00 是美股夜盘时段（KR市/夜盘覆盖），所以仍刷新
-    // 自 v1.1.7 起 isTradingHour 在工作日内全天返回 true（美股四时段 + 夜盘覆盖 24h）
-    func test_aStock_lunchBreak_isTrading_dueToUSOvernight() {
+    // 午休期间不因海外市场交易而继续刷新。
+    func test_aStock_lunchBreak_notTrading() {
         let d = makeDate(weekday: 2, hour: 12, minute: 0)  // 周一 12:00
-        XCTAssertTrue(RefreshScheduler.isTradingHour(at: d))
+        XCTAssertFalse(RefreshScheduler.isTradingHour(at: d))
     }
 
     // 周末不交易
@@ -42,20 +41,33 @@ final class RefreshSchedulerTests: XCTestCase {
     }
 
     // 美股晚间开盘
-    func test_usStock_evening_isTrading() {
+    func test_usStock_evening_notTrading() {
         let d = makeDate(weekday: 2, hour: 22, minute: 0)  // 周一 22:00（美股盘中）
-        XCTAssertTrue(RefreshScheduler.isTradingHour(at: d))
+        XCTAssertFalse(RefreshScheduler.isTradingHour(at: d))
     }
 
     // 美股凌晨跨日
-    func test_usStock_earlyMorning_isTrading() {
+    func test_usStock_earlyMorning_notTrading() {
         let d = makeDate(weekday: 3, hour: 3, minute: 0)   // 周二 03:00（美股尾盘）
-        XCTAssertTrue(RefreshScheduler.isTradingHour(at: d))
+        XCTAssertFalse(RefreshScheduler.isTradingHour(at: d))
     }
 
-    // A股收市后：北京 16:30 是美股盘前时段，仍刷新
-    func test_afterClose_isTrading_dueToUSPreMarket() {
+    // A股收市后，即使美股盘前也不自动刷新
+    func test_afterClose_notTrading() {
         let d = makeDate(weekday: 2, hour: 16, minute: 30) // 周一 16:30
-        XCTAssertTrue(RefreshScheduler.isTradingHour(at: d))
+        XCTAssertFalse(RefreshScheduler.isTradingHour(at: d))
     }
+
+    func test_aStock_sessionBoundaries() {
+        for (hour, minute, expected) in [(9, 29, false), (9, 30, true), (11, 29, true),
+                                         (11, 30, false), (12, 59, false), (13, 0, true),
+                                         (14, 59, true), (15, 0, false)] {
+            XCTAssertEqual(
+                RefreshScheduler.isTradingHour(at: makeDate(weekday: 2, hour: hour, minute: minute)),
+                expected,
+                "\(hour):\(minute)",
+            )
+        }
+    }
+
 }
