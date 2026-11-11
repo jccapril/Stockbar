@@ -4,17 +4,27 @@ import SwiftUI
 struct StockChartView: View {
     let stock: Stock
     let onClose: () -> Void
+    let isExpanded: Bool
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
 
     @State private var points: [MinutePoint] = []
     @State private var preClose: Double = 0
     @State private var isLoading = true
     @State private var loadFailed = false
     @State private var period: Period = .intraday
+    @State private var hoveredPoint: MinutePoint?
 
     private enum Period: String, CaseIterable {
         case intraday = "分时"
         case fiveDays = "五日"
+    }
+
+    init(stock: Stock, onClose: @escaping () -> Void, isExpanded: Bool = false, fiveDays: Bool = false) {
+        self.stock = stock
+        self.onClose = onClose
+        self.isExpanded = isExpanded
+        _period = State(initialValue: fiveDays ? .fiveDays : .intraday)
     }
 
     private var quote: Quote? { appState.quotes[stock.id] }
@@ -71,7 +81,7 @@ struct StockChartView: View {
             .padding(.bottom, 6)
             Divider()
             chartAreaView
-                .frame(height: 200)
+                .frame(minHeight: isExpanded ? 280 : 200, maxHeight: isExpanded ? .infinity : 200)
             if !isLoading, !loadFailed, !points.isEmpty {
                 statsRow
             }
@@ -83,11 +93,13 @@ struct StockChartView: View {
 
     private var headerView: some View {
         HStack(alignment: .center, spacing: 6) {
-            Button(action: onClose) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .medium))
+            if !isExpanded {
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(stock.name)
@@ -99,6 +111,20 @@ struct StockChartView: View {
             }
 
             Spacer()
+
+            if !isExpanded {
+                Button {
+                    appState.expandedChartStock = stock
+                    appState.expandedChartFiveDays = period == .fiveDays
+                    openWindow(id: "expanded-chart")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.plain)
+                .help("展开图表")
+                .accessibilityLabel("展开图表")
+            }
 
             if let q = quote {
                 VStack(alignment: .trailing, spacing: 1) {
@@ -213,7 +239,7 @@ struct StockChartView: View {
                     yEnd: .value("price", p.price),
                     series: .value("交易日", p.day),
                 )
-                .foregroundStyle(lineColor.opacity(0.12))
+                .foregroundStyle(lineColor.opacity(0.04))
             }
 
             if period == .fiveDays {
@@ -222,6 +248,17 @@ struct StockChartView: View {
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         .foregroundStyle(Color.secondary.opacity(0.5))
                 }
+            }
+            if let point = hoveredPoint {
+                RuleMark(x: .value("时间", point.id))
+                    .foregroundStyle(Color.secondary)
+                    .lineStyle(StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+                RuleMark(y: .value("选中价格", point.price))
+                    .foregroundStyle(Color.secondary)
+                    .lineStyle(StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+                PointMark(x: .value("t", point.id), y: .value("price", point.price))
+                    .foregroundStyle(lineColor)
+                    .symbolSize(35)
             }
         }
         .chartXScale(domain: fullDayRange)
@@ -251,6 +288,64 @@ struct StockChartView: View {
                     .foregroundStyle(Color.secondary)
             }
         }
+        .chartOverlay { proxy in
+            hoverOverlay(proxy: proxy)
+        }
+        .onChange(of: period) { _ in hoveredPoint = nil }
+    }
+
+    private func hoverOverlay(proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            let plot = geometry[proxy.plotAreaFrame]
+            ZStack(alignment: .topLeading) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case let .active(location):
+                            // 坐标轴和未交易的空白区域不显示历史采样，避免误认时间。
+                            guard plot.contains(location),
+                                  let x: Double = proxy.value(atX: location.x - plot.minX),
+                                  let first = points.first, let last = points.last,
+                                  x >= Double(first.id) - 0.5, x <= Double(last.id) + 0.5 else {
+                                hoveredPoint = nil
+                                return
+                            }
+                            hoveredPoint = points.min { abs(Double($0.id) - x) < abs(Double($1.id) - x) }
+                        case .ended:
+                            hoveredPoint = nil
+                        }
+                    }
+                if let point = hoveredPoint, let x = proxy.position(forX: point.id) {
+                    hoverDetails(point)
+                        .frame(width: 145, alignment: .leading)
+                        .padding(6)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                        .offset(
+                            x: x > plot.width / 2 ? plot.minX + 4 : plot.maxX - 161,
+                            y: plot.minY + 4,
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
+    private func hoverDetails(_ point: MinutePoint) -> some View {
+        let time = point.time.contains(":") ? point.time : "\(point.time.prefix(2)):\(point.time.suffix(2))"
+        let date = "\(point.day.prefix(4))/\(point.day.dropFirst(4).prefix(2))/\(point.day.suffix(2))"
+        let change = preClose > 0 ? (point.price / preClose - 1) * 100 : nil
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(period == .fiveDays ? "\(date) \(time)" : time)
+            Text("价格  \(String(format: point.price >= 10 ? "%.2f" : "%.3f", point.price))")
+            Text("涨跌幅  \(change.map { String(format: "%+.2f%%", $0) } ?? "—")")
+                .foregroundStyle(Color(point.price >= preClose ? appState.config.upColorName : appState.config
+                    .downColorName))
+            Text(period == .fiveDays ? "相对五日起始前收盘价" : "相对昨收")
+                .foregroundStyle(.secondary)
+        }
+        .font(.system(size: 10))
+        .monospacedDigit()
     }
 
     // MARK: - 底部统计
@@ -296,6 +391,7 @@ struct StockChartView: View {
         isLoading = true
         loadFailed = false
         points = []
+        hoveredPoint = nil
         do {
             let (pts, pc) = try await (period == .fiveDays
                 ? ChartService.fetchFiveDay(stock: stock)

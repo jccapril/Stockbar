@@ -31,6 +31,9 @@ final class AppState: ObservableObject {
 
     // MARK: - 实时状态
 
+    @Published var expandedChartStock: Stock?
+    @Published var expandedChartFiveDays = false
+
     @Published var quotes: [String: Quote]      = [:]
     @Published var exchangeRates: ExchangeRates = ExchangeRates()
     @Published var isLoading: Bool              = false

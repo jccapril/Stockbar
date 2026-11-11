@@ -13,6 +13,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         logToFile("applicationWillTerminate")
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        // 大图关闭后仍需驻留状态栏；退出由工具栏的退出按钮处理。
+        false
+    }
+
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         appLogger.warning("applicationShouldTerminate called")
         logToFile("applicationShouldTerminate called")
@@ -35,5 +40,22 @@ struct StockbarApp: App {
                 .environmentObject(appState)
         }
         .menuBarExtraStyle(.window)
+
+        Window("行情走势", id: "expanded-chart") {
+            if let stock = appState.expandedChartStock {
+                StockChartView(
+                    stock: stock,
+                    onClose: {},
+                    isExpanded: true,
+                    fiveDays: appState.expandedChartFiveDays,
+                )
+                    .id("\(stock.id)-\(appState.expandedChartFiveDays)")
+                    .environmentObject(appState)
+                    .padding(16)
+                    .frame(minWidth: 640, minHeight: 400)
+            }
+        }
+        .defaultSize(width: 900, height: 540)
+        .windowResizability(.contentMinSize)
     }
 }
