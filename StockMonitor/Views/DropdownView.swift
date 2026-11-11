@@ -4,6 +4,9 @@ struct DropdownView: View {
     @EnvironmentObject var appState: AppState
     @State private var showSettings = false
     @State private var sortByChange = false
+    @State private var searchText = ""
+
+    private var searchQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
     @State private var selectedStock: Stock? = nil
     @State private var dropFrames: [String: CGRect] = [:]
     @State private var dragLocation: CGPoint?
@@ -33,7 +36,7 @@ struct DropdownView: View {
 
         var result: [(Market, [Stock], String?)] = []
         let indexIDs = Set(AppState.marketIndices.map(\.id))
-        let listStocks = appState.stocks.filter { !indexIDs.contains($0.id) }
+        let listStocks = appState.stocks.filter { !indexIDs.contains($0.id) && $0.matchesListSearch(searchQuery) }
         let pinnedStocks = listStocks.filter(\.isPinned)
         let unpinnedStocks = listStocks.filter { !$0.isPinned }
 
@@ -101,6 +104,7 @@ struct DropdownView: View {
                                    },
                         onDrop: moveStock,
                     )
+                        .id("\(group.0.rawValue)-\(group.2 ?? "")-\(searchQuery)")
                         .background(GeometryReader { geometry in
                             if group.2 == "置顶" {
                                 Color.clear.preference(
@@ -194,10 +198,10 @@ struct DropdownView: View {
         var ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
         ordered.insert(moved, at: placement.index)
 
-        // 一次保存置顶状态和可见顺序，保留不参与列表展示的指数数据。
-        let indexIDs = Set(AppState.marketIndices.map(\.id))
+        // 只重排本次搜索结果的槽位，保留未匹配的股票和固定指数。
+        let visibleIDs = Set(ordered.map(\.id))
         var updated = appState.stocks
-        let positions = updated.indices.filter { !indexIDs.contains(updated[$0].id) }
+        let positions = updated.indices.filter { visibleIDs.contains(updated[$0].id) }
         for (position, item) in zip(positions, ordered) {
             updated[position] = item
         }
@@ -261,12 +265,30 @@ struct DropdownView: View {
 
                 marketIndexCards
 
+                if selectedStock == nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("搜索列表：名称或代码", text: $searchText)
+                            .textFieldStyle(.plain)
+                        if !searchText.isEmpty {
+                            Button { searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("清空搜索")
+                        }
+                    }
+                    .padding(6)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 6)
+                }
+
                 if let stock = selectedStock {
                     StockChartView(stock: stock, onClose: { selectedStock = nil })
                         // 切换指数时重建图表状态，并重新请求对应的分时数据。
                         .id(stock.id)
                 } else if groupedStocks.isEmpty {
-                    Text("暂无股票，点击下方“新增”添加")
+                    Text(searchQuery.isEmpty ? "暂无股票，点击下方“新增”添加" : "没有匹配的股票")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)

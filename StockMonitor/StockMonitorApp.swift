@@ -63,6 +63,7 @@ struct StockbarApp: App {
                     .environmentObject(appState)
                     .padding(16)
                     .frame(minWidth: 640, minHeight: 400)
+                    .background(ChartWindowFrameSaver())
             }
         }
         .defaultSize(width: 900, height: 540)

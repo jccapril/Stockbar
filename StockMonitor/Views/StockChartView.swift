@@ -19,12 +19,12 @@ struct StockChartView: View {
         stock: Stock,
         onClose: @escaping () -> Void,
         isExpanded: Bool = false,
-        initialPeriod: ChartPeriod = .intraday,
+        initialPeriod: ChartPeriod? = nil,
     ) {
         self.stock = stock
         self.onClose = onClose
         self.isExpanded = isExpanded
-        _period = State(initialValue: initialPeriod)
+        _period = State(initialValue: initialPeriod ?? ChartPreferences.period)
     }
 
     private var quote: Quote? { appState.quotes[stock.id] }
@@ -87,6 +87,7 @@ struct StockChartView: View {
             }
         }
         .task(id: period) { await load() }
+        .onChange(of: period) { ChartPreferences.period = $0 }
     }
 
     // MARK: - 顶部信息栏

@@ -22,6 +22,10 @@ struct Stock: Identifiable, Equatable {
     var holdingShares: Double?  // 持仓股数（nil = 未设置）
     var isPinned: Bool = false
 
+    func matchesListSearch(_ query: String) -> Bool {
+        query.isEmpty || name.localizedStandardContains(query) || id.localizedStandardContains(query)
+    }
+
     /// 持仓浮盈亏 = (当前价 - 成本价) × 股数；未设置持仓则返回 nil
     func pnl(quote: Quote) -> Double? {
         guard let cost = costPrice, let shares = holdingShares else { return nil }

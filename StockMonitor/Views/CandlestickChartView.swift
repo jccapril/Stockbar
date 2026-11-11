@@ -189,12 +189,14 @@ struct CandlestickChartView: View {
 
     private func zoom(to count: Int) {
         visibleCount = min(bars.count, max(10, count))
+        ChartPreferences.rememberVisibleCount(visibleCount, for: period)
         endIndex = max(endIndex, visibleCount)
         hoveredIndex = nil
     }
 
     private func load() async {
         isLoading = true
+        visibleCount = ChartPreferences.visibleCount(for: period)
         loadFailed = false
         hoveredIndex = nil
         dragStartEnd = nil
