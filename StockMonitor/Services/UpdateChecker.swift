@@ -1,7 +1,7 @@
-import Foundation
 import AppKit
 import Combine
 import CryptoKit
+import Foundation
 
 private struct GitHubRelease: Decodable {
     let tagName: String
@@ -46,14 +46,14 @@ final class UpdateChecker: ObservableObject {
     // MARK: - 主流程
 
     private func run() async {
-        defer { if !isBusy { status = "" } }
-
         // 1. 获取最新 release
-        guard let url = URL(string: "https://api.github.com/repos/VGEAREN/Stockbar/releases/latest") else { return finish("检查失败") }
+        guard let url = URL(string: "https://api.github.com/repos/jccapril/Stockbar/releases/latest")
+            else { return finish("检查失败") }
         var req = URLRequest(url: url)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
 
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let response = response as? HTTPURLResponse, response.statusCode == 200,
               let release = try? JSONDecoder().decode(GitHubRelease.self, from: data) else {
             return finish("检查失败，请检查网络")
         }
@@ -67,8 +67,10 @@ final class UpdateChecker: ObservableObject {
         }
 
         // 2. 找到 DMG 下载地址
-        guard let dmgAsset = release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") }),
-              let downloadURL = URL(string: dmgAsset.browserDownloadUrl) else {
+        guard let dmgAsset = release.assets.first(where: { $0.name == "Stockbar-v\(latest).dmg" }),
+              let downloadURL = URL(string: dmgAsset.browserDownloadUrl),
+              downloadURL.scheme == "https", downloadURL.host == "github.com",
+              downloadURL.path.hasPrefix("/jccapril/Stockbar/releases/download/\(latestTag)/") else {
             return finish("未找到安装包")
         }
 
@@ -89,19 +91,27 @@ final class UpdateChecker: ObservableObject {
     private func downloadAndInstall(url: URL, version: String, releaseBody: String?) async {
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent("StockbarUpdate-\(UUID().uuidString)")
-        try? fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        do {
+            try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        } catch { return finish("无法创建更新目录") }
 
         // 下载 DMG
         let dmgPath = tempDir.appendingPathComponent("Stockbar.dmg")
         do {
-            let (localURL, _) = try await URLSession.shared.download(from: url)
+            let (localURL, response) = try await URLSession.shared.download(from: url)
+            guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+                return finish("下载安装包失败")
+            }
             try fm.moveItem(at: localURL, to: dmgPath)
         } catch {
             return finish("下载失败")
         }
 
         // SHA-256 校验
-        if let expectedHash = parseSHA256(from: releaseBody) {
+        guard let expectedHash = parseSHA256(from: releaseBody) else {
+            return finish("发布信息缺少 SHA-256，无法验证安装包")
+        }
+        do {
             guard let dmgData = try? Data(contentsOf: dmgPath) else {
                 return finish("校验失败")
             }
@@ -111,22 +121,27 @@ final class UpdateChecker: ObservableObject {
                 return finish("校验失败")
             }
             logToFile("UpdateChecker: SHA-256 verified OK")
-        } else {
-            logToFile("UpdateChecker: no SHA-256 in release body, skipping verification")
         }
 
         status = "正在安装…"
 
         // 挂载 DMG
         let mountPoint = tempDir.appendingPathComponent("vol").path
-        try? fm.createDirectory(atPath: mountPoint, withIntermediateDirectories: true)
-        guard shell("/usr/bin/hdiutil", "attach", dmgPath.path, "-mountpoint", mountPoint, "-nobrowse", "-quiet") == 0 else {
+        do {
+            try fm.createDirectory(atPath: mountPoint, withIntermediateDirectories: true)
+        } catch { return finish("无法创建挂载目录") }
+        guard shell("/usr/bin/hdiutil", "attach", dmgPath.path, "-mountpoint", mountPoint, "-nobrowse", "-quiet") == 0
+            else {
             return finish("挂载失败")
         }
 
         // 找到 .app
         let sourceApp = "\(mountPoint)/Stockbar.app"
-        guard fm.fileExists(atPath: sourceApp) else {
+        guard let sourceBundle = Bundle(path: sourceApp),
+              sourceBundle.bundleIdentifier == "com.vgearen.Stockbar",
+              sourceBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == version,
+              let executable = sourceBundle.executableURL,
+              fm.isExecutableFile(atPath: executable.path) else {
             shell("/usr/bin/hdiutil", "detach", mountPoint, "-quiet")
             return finish("安装包异常")
         }
@@ -141,32 +156,58 @@ final class UpdateChecker: ObservableObject {
         }
         shell("/usr/bin/hdiutil", "detach", mountPoint, "-quiet")
 
-        // 写替换脚本并执行（使用位置参数避免路径注入）
-        let currentApp = Bundle.main.bundlePath
-        let script = """
-        #!/bin/bash
-        sleep 1
-        rm -rf "$1"
-        cp -R "$2" "$1"
-        open "$1"
-        rm -rf "$3"
-        """
-        let scriptPath = tempDir.appendingPathComponent("update.sh").path
-        try? script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-        shell("/bin/chmod", "+x", scriptPath)
-
+        // 先复制到安装目录的相邻位置，复制失败时不退出、不改动正在运行的 App。
+        let currentApp = Bundle.main.bundleURL
+        guard fm.isWritableFile(atPath: currentApp.deletingLastPathComponent().path) else {
+            return finish("应用目录不可写，请将安装包拖到应用程序目录安装")
+        }
+        let stagedApp = currentApp.deletingLastPathComponent()
+            .appendingPathComponent(".Stockbar-new-\(UUID().uuidString).app")
+        let backupApp = currentApp.deletingLastPathComponent()
+            .appendingPathComponent(".Stockbar-backup-\(UUID().uuidString).app")
+        let scriptPath = tempDir.appendingPathComponent("update.sh")
+        do {
+            try fm.copyItem(atPath: newApp, toPath: stagedApp.path)
+            try Self.replacementScript.write(to: scriptPath, atomically: true, encoding: .utf8)
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+            proc.arguments = [scriptPath.path, currentApp.path, stagedApp.path, backupApp.path,
+                              tempDir.path, String(ProcessInfo.processInfo.processIdentifier)]
+            try proc.run()
+        } catch {
+            logToFile("UpdateChecker: failed to prepare replacement: \(error)")
+            return finish("准备更新失败，当前应用已保留")
+        }
         status = "正在重启…"
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-        proc.arguments = [scriptPath, currentApp, newApp, tempDir.path]
-        try? proc.run()
-
         NSApplication.shared.terminate(nil)
     }
 
+    // 同一目录内重命名；新版移入失败时恢复旧版，避免先删除导致应用丢失。
+    static let replacementScript = """
+    #!/bin/bash
+    set -u
+    while kill -0 "$5" 2>/dev/null; do sleep 0.2; done
+    if ! /bin/mv "$1" "$3"; then
+        /usr/bin/open "$1"
+        exit 1
+    fi
+    if ! /bin/mv "$2" "$1"; then
+        /bin/mv "$3" "$1"
+        /usr/bin/open "$1"
+        exit 1
+    fi
+    if ! /usr/bin/open "$1"; then
+        /bin/mv "$1" "$2"
+        /bin/mv "$3" "$1"
+        /usr/bin/open "$1"
+        exit 1
+    fi
+    /bin/rm -rf "$3" "$4"
+    """
+
     /// 从 release body 中提取 SHA-256 哈希值（格式: SHA-256: <hex>）
     private func parseSHA256(from body: String?) -> String? {
-        guard let body = body else { return nil }
+        guard let body else { return nil }
         let pattern = #"SHA-256:\s*([0-9a-fA-F]{64})"#
         guard let range = body.range(of: pattern, options: .regularExpression) else { return nil }
         let match = String(body[range])
@@ -203,7 +244,11 @@ final class UpdateChecker: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: args[0])
         proc.arguments = Array(args.dropFirst())
-        try? proc.run()
+        do { try proc.run() }
+        catch {
+            logToFile("UpdateChecker: process failed: \(error)")
+            return -1
+        }
         proc.waitUntilExit()
         return proc.terminationStatus
     }

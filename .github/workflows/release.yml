@@ -79,10 +79,20 @@ jobs:
 
           echo "DMG created: $DMG_NAME"
 
+      - name: Write checksum and release notes
+        run: |
+          DMG_NAME="Stockbar-${GITHUB_REF_NAME}.dmg"
+          shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+          HASH=$(shasum -a 256 "$DMG_NAME" | cut -d ' ' -f 1)
+          printf 'Stockbar %s\n\nSHA-256: %s\n' "$GITHUB_REF_NAME" "$HASH" > release-notes.md
+
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Stockbar-*.dmg
+          files: |
+            Stockbar-*.dmg
+            Stockbar-*.dmg.sha256
+          body_path: release-notes.md
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
