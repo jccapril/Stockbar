@@ -23,7 +23,6 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-
                 if let s = editingStock {
                     inlineEditView(s)
                 } else {
@@ -41,7 +40,7 @@ struct SettingsView: View {
                 section("状态栏显示") {
                     Picker("", selection: Binding(
                         get: { appState.statusBarStockId },
-                        set: { appState.statusBarStockId = $0 }
+                        set: { appState.statusBarStockId = $0 },
                     )) {
                         Text("不显示").tag("__none__")
                         Text("日盈亏").tag("__daily_pnl__")
@@ -55,11 +54,25 @@ struct SettingsView: View {
                     }.pickerStyle(.menu)
                 }
 
+                // 行情格式只适用于股票，盈亏和不显示模式没有此选项。
+                if !appState.statusBarStockId.hasPrefix("__") {
+                    section("状态栏行情格式") {
+                        Picker("", selection: Binding(
+                            get: { appState.config.statusBarQuoteDisplay },
+                            set: { appState.config.statusBarQuoteDisplay = $0 },
+                        )) {
+                            ForEach(StatusBarQuoteDisplay.allCases, id: \.rawValue) { format in
+                                Text(format.displayName).tag(format)
+                            }
+                        }.pickerStyle(.menu)
+                    }
+                }
+
                 // 持仓股分组
                 section("持仓股展示") {
                     Toggle("持仓股单独分组置顶", isOn: Binding(
                         get: { appState.config.groupHoldings },
-                        set: { appState.config.groupHoldings = $0 }
+                        set: { appState.config.groupHoldings = $0 },
                     ))
                     .padding(.leading, 8)
                 }
@@ -69,7 +82,7 @@ struct SettingsView: View {
                     // 当前选择
                     Picker("", selection: Binding(
                         get: { appState.config.activeWatchlistId ?? "__real__" },
-                        set: { appState.config.activeWatchlistId = $0 == "__real__" ? nil : $0 }
+                        set: { appState.config.activeWatchlistId = $0 == "__real__" ? nil : $0 },
                     )) {
                         Text("真实持仓").tag("__real__")
                         ForEach(appState.watchlists) { wl in
@@ -120,7 +133,7 @@ struct SettingsView: View {
                 section("排序规则") {
                     Picker("", selection: Binding(
                         get: { appState.config.sortRule },
-                        set: { appState.config.sortRule = $0 }
+                        set: { appState.config.sortRule = $0 },
                     )) {
                         ForEach(SortRule.allCases, id: \.rawValue) { rule in
                             Text(rule.displayName).tag(rule)
@@ -132,7 +145,7 @@ struct SettingsView: View {
                 section("美股排序价格") {
                     Picker("", selection: Binding(
                         get: { appState.config.usPriceMode },
-                        set: { appState.config.usPriceMode = $0 }
+                        set: { appState.config.usPriceMode = $0 },
                     )) {
                         ForEach(USPriceMode.allCases, id: \.rawValue) { mode in
                             Text(mode.displayName).tag(mode)
@@ -144,7 +157,7 @@ struct SettingsView: View {
                 section("刷新间隔") {
                     Picker("", selection: Binding(
                         get: { appState.refreshInterval },
-                        set: { appState.refreshInterval = $0; appState.restartScheduler() }
+                        set: { appState.refreshInterval = $0; appState.restartScheduler() },
                     )) {
                         ForEach(AppSettings.validRefreshIntervals, id: \.self) { i in
                             Text("\(i) 秒").tag(i)
@@ -165,7 +178,7 @@ struct SettingsView: View {
                 section("持仓汇总货币") {
                     Picker("", selection: Binding(
                         get: { appState.displayCurrency },
-                        set: { appState.displayCurrency = $0 }
+                        set: { appState.displayCurrency = $0 },
                     )) {
                         ForEach(DisplayCurrency.allCases, id: \.rawValue) { c in
                             Text(c.displayName).tag(c)
@@ -282,7 +295,7 @@ struct SettingsView: View {
     // MARK: - 子视图
 
     @ViewBuilder
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundColor(.secondary)
             content()
@@ -371,7 +384,10 @@ struct SettingsView: View {
                        let wlIdx = appState.watchlists.firstIndex(where: { $0.id == wlId }) {
                         // 写入观察仓
                         if let c = cost, let s = shares {
-                            appState.watchlists[wlIdx].entries[stock.id] = WatchlistEntry(costPrice: c, holdingShares: s)
+                            appState.watchlists[wlIdx].entries[stock.id] = WatchlistEntry(
+                                costPrice: c,
+                                holdingShares: s,
+                            )
                         } else {
                             appState.watchlists[wlIdx].entries.removeValue(forKey: stock.id)
                         }
@@ -465,14 +481,15 @@ struct SettingsView: View {
         if lower.hasPrefix("kr_") { return true }
         if k.unicodeScalars.contains(where: { $0.value >= 0xAC00 && $0.value <= 0xD7AF }) { return true }
         if k.count == 6, k.allSatisfy(\.isNumber) { return true }
-        if k.count >= 3, k.allSatisfy({ $0.isLetter }) { return true }
+        if k.count >= 3, k.allSatisfy(\.isLetter) { return true }
         return false
     }
 
     /// Yahoo /v1/finance/search — 仅返回韩股（KSC / KOE 两种 exchange）
     private func yahooKoreanSearch(_ keyword: String) async -> [SearchResult] {
         guard let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://query1.finance.yahoo.com/v1/finance/search?q=\(encoded)&quotesCount=10") else {
+              let url = URL(string: "https://query1.finance.yahoo.com/v1/finance/search?q=\(encoded)&quotesCount=10")
+              else {
             return []
         }
         var req = URLRequest(url: url)
@@ -558,8 +575,13 @@ struct SettingsView: View {
 
     private func addStock(_ r: SearchResult) {
         guard !appState.stocks.contains(where: { $0.id == r.id }) else { return }
-        appState.stocks.append(Stock(id: r.id, name: r.name, market: r.market,
-                                     costPrice: nil, holdingShares: nil))
+        appState.stocks.append(Stock(
+            id: r.id,
+            name: r.name,
+            market: r.market,
+            costPrice: nil,
+            holdingShares: nil,
+        ))
         searchText = ""; searchResults = []
     }
 }

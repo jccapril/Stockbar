@@ -19,13 +19,15 @@ struct MenuBarLabel: View {
 
             if isPnl {
                 pnlText
-            } else if let stock = appState.statusBarStock,
-                      let quote = appState.statusBarQuote {
-                Text(quote.formattedPrice)
+            } else if let quote = appState.statusBarQuote {
+                let title = switch appState.config.statusBarQuoteDisplay {
+                case .price: quote.formattedPrice
+                case .percent: quote.formattedPercent
+                case .priceAndPercent: "\(quote.formattedPrice) \(quote.formattedPercent)"
+                }
+                // 合为一个标题，确保组合模式的两项行情都能显示。
+                Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(appState.quoteColor(for: quote))
-                Text(quote.formattedPercent)
-                    .font(.system(size: 11))
                     .foregroundColor(appState.quoteColor(for: quote))
             }
 

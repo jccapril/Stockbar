@@ -1,10 +1,15 @@
-import SwiftUI
-import Combine
 import AppKit
+import Combine
 import os
+import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    static let marketIndices = [
+        (id: "sh000001", name: "上证"),
+        (id: "sz399006", name: "创业"),
+        (id: "sh000688", name: "科创"),
+    ]
 
     // MARK: - 持久化（settings.json）
 
@@ -77,7 +82,6 @@ final class AppState: ObservableObject {
     // MARK: - 保存
 
     private func saveStocks(_ stocks: [Stock]) {
-        if stocks.isEmpty, !Self.loadStocks().isEmpty { return }
         guard let data = try? JSONEncoder().encode(stocks) else { return }
         Self.backupIfNeeded()
         do {
@@ -115,13 +119,23 @@ final class AppState: ObservableObject {
             let from = dir.appendingPathComponent("stocks.\(i).json")
             let to   = dir.appendingPathComponent("stocks.\(i + 1).json")
             if fm.fileExists(atPath: from.path) {
-                do { try fm.removeItem(at: to) } catch { logToFile("backupIfNeeded: removeItem \(to.lastPathComponent) failed: \(error)") }
-                do { try fm.moveItem(at: from, to: to) } catch { logToFile("backupIfNeeded: moveItem \(from.lastPathComponent) -> \(to.lastPathComponent) failed: \(error)") }
+                do { try fm.removeItem(at: to) } catch {
+                    logToFile("backupIfNeeded: removeItem \(to.lastPathComponent) failed: \(error)")
+                }
+                do { try fm.moveItem(at: from, to: to) } catch {
+                    logToFile(
+                        "backupIfNeeded: moveItem \(from.lastPathComponent) -> \(to.lastPathComponent) failed: \(error)",
+                    )
+                    }
             }
         }
         let backup = dir.appendingPathComponent("stocks.1.json")
-        do { try fm.removeItem(at: backup) } catch { logToFile("backupIfNeeded: removeItem \(backup.lastPathComponent) failed: \(error)") }
-        do { try fm.copyItem(at: src, to: backup) } catch { logToFile("backupIfNeeded: copyItem to \(backup.lastPathComponent) failed: \(error)") }
+        do { try fm.removeItem(at: backup) } catch {
+            logToFile("backupIfNeeded: removeItem \(backup.lastPathComponent) failed: \(error)")
+        }
+        do { try fm.copyItem(at: src, to: backup) } catch {
+            logToFile("backupIfNeeded: copyItem to \(backup.lastPathComponent) failed: \(error)")
+        }
     }
 
     // MARK: - 设置快捷访问（视图直接绑定这些属性）
@@ -156,15 +170,16 @@ final class AppState: ObservableObject {
         _stocks     = Published(wrappedValue: Self.loadStocks())
         _config     = Published(wrappedValue: Self.loadSettings())
         _watchlists = Published(wrappedValue: Self.loadWatchlists())
-        appLogger.info("AppState stocks loaded: \(self.stocks.count)")
-        logToFile("AppState stocks loaded: \(self.stocks.count)")
+        let stockCount = stocks.count
+        appLogger.info("AppState stocks loaded: \(stockCount)")
+        logToFile("AppState stocks loaded: \(stockCount)")
         setupScheduler()
         appLogger.info("AppState init complete")
         logToFile("AppState init complete")
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
-            queue: .main
+            queue: .main,
         ) { [weak self] _ in
             Task { @MainActor [weak self] in self?.restartScheduler() }
         }
@@ -188,7 +203,8 @@ final class AppState: ObservableObject {
         isLoading = true
         hasError  = false
         do {
-            let all       = stocks.map(\.id)
+            // 固定指数始终刷新，包括用户尚未添加任何股票的情况。
+            let all       = Array(Set(stocks.map(\.id) + Self.marketIndices.map(\.id))).sorted()
             let sinaCodes = all.filter { !$0.hasPrefix("hk") && !KoreanStockID.isKorean($0) }
             let hkCodes   = all.filter {  $0.hasPrefix("hk") }
             let krIds     = all.filter {  KoreanStockID.isKorean($0) }
@@ -357,9 +373,9 @@ final class AppState: ObservableObject {
         let comps = cal.dateComponents([.weekday, .hour, .minute], from: now)
         let wd = comps.weekday ?? 1
         // Swift Calendar weekday: 1=周日, 2=周一, ..., 6=周五, 7=周六
-        guard wd >= 2 && wd <= 6 else { return nil }
+        guard wd >= 2, wd <= 6 else { return nil }
         let t = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        if t >= 9 * 60 && t <= 15 * 60 + 30 { return "盘中" }
+        if t >= 9 * 60, t <= 15 * 60 + 30 { return "盘中" }
         return nil
     }
 

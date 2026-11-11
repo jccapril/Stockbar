@@ -20,6 +20,7 @@ struct Stock: Identifiable, Equatable {
     var market: Market
     var costPrice: Double?      // 持仓成本价（nil = 未设置）
     var holdingShares: Double?  // 持仓股数（nil = 未设置）
+    var isPinned: Bool = false
 
     /// 持仓浮盈亏 = (当前价 - 成本价) × 股数；未设置持仓则返回 nil
     func pnl(quote: Quote) -> Double? {
@@ -49,7 +50,7 @@ struct Stock: Identifiable, Equatable {
 // MARK: - Codable（容错：未知字段用默认值，避免新版本解码老数据时整条失败）
 extension Stock: Codable {
     enum CodingKeys: String, CodingKey {
-        case id, name, market, costPrice, holdingShares
+        case id, name, market, costPrice, holdingShares, isPinned
     }
 
     init(from decoder: Decoder) throws {
@@ -59,5 +60,6 @@ extension Stock: Codable {
         market       = try c.decode(Market.self,  forKey: .market)
         costPrice    = try c.decodeIfPresent(Double.self, forKey: .costPrice)
         holdingShares = try c.decodeIfPresent(Double.self, forKey: .holdingShares)
+        isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 }

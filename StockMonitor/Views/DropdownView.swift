@@ -5,6 +5,16 @@ struct DropdownView: View {
     @State private var showSettings = false
     @State private var sortByChange = false
     @State private var selectedStock: Stock? = nil
+    @State private var dropFrames: [String: CGRect] = [:]
+    @State private var dragLocation: CGPoint?
+    @State private var draggedStock: Stock?
+    @State private var rowFrames: [String: CGRect] = [:]
+
+    private var pinDropFrame: CGRect? { dropFrames["pinned"] }
+
+    private var isPinDropTargeted: Bool {
+        dragLocation.map { pinDropFrame?.contains($0) == true } ?? false
+    }
 
     /// 分组数据：(market, stocks, customTitle?)
     private var groupedStocks: [(Market, [Stock], String?)] {
@@ -22,10 +32,19 @@ struct DropdownView: View {
         }
 
         var result: [(Market, [Stock], String?)] = []
+        let indexIDs = Set(AppState.marketIndices.map(\.id))
+        let listStocks = appState.stocks.filter { !indexIDs.contains($0.id) }
+        let pinnedStocks = listStocks.filter(\.isPinned)
+        let unpinnedStocks = listStocks.filter { !$0.isPinned }
+
+        // 置顶组独立于市场和持仓分组，涨跌幅排序不会把它移到下方。
+        if !pinnedStocks.isEmpty {
+            result.append((.aStock, pinnedStocks, "置顶"))
+        }
 
         // 持仓股单独分组
         if appState.config.groupHoldings {
-            let holdings = appState.stocks.filter { appState.effectiveShares(for: $0) != nil }
+            let holdings = unpinnedStocks.filter { appState.effectiveShares(for: $0) != nil }
             if !holdings.isEmpty {
                 // 持仓组内按第一只股票的市场类型排序（混合市场）
                 let sortedHoldings = doSort ? holdings.sorted { a, b in
@@ -37,12 +56,12 @@ struct DropdownView: View {
             }
             let holdingIds = Set(holdings.map(\.id))
             for market in [Market.aStock, .hkStock, .usStock, .krStock] {
-                let s = appState.stocks.filter { $0.market == market && !holdingIds.contains($0.id) }
+                let s = unpinnedStocks.filter { $0.market == market && !holdingIds.contains($0.id) }
                 if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
             }
         } else {
             for market in [Market.aStock, .hkStock, .usStock, .krStock] {
-                let s = appState.stocks.filter { $0.market == market }
+                let s = unpinnedStocks.filter { $0.market == market }
                 if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
             }
         }
@@ -51,27 +70,186 @@ struct DropdownView: View {
     }
 
     private var stockListView: some View {
-        ScrollView {
+        let groups = groupedStocks
+        return ScrollView {
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(groupedStocks.enumerated()), id: \.offset) { _, group in
-                    StockGroupView(market: group.0, stocks: group.1,
-                                   title: group.2,
-                                   onSelect: { selectedStock = $0 })
+                // 首次置顶也提供固定落点，拖动过程中不改变列表布局。
+                if !groups.contains(where: { $0.2 == "置顶" }) {
+                    Label("拖到这里置顶", systemImage: "pin")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor.opacity(isPinDropTargeted ? 0.18 : 0.04))
+                        .cornerRadius(6)
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: StockDropFramesKey.self,
+                                value: ["pinned": geometry.frame(in: .named("stockList"))],
+                            )
+                        })
+                }
+                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    StockGroupView(
+                        market: group.0,
+                        stocks: group.1,
+                        title: group.2,
+                        onSelect: { selectedStock = $0 },
+                        onDragChange: { stock, location in
+                                       draggedStock = stock
+                                       dragLocation = location
+                                   },
+                        onDrop: moveStock,
+                    )
+                        .background(GeometryReader { geometry in
+                            if group.2 == "置顶" {
+                                Color.clear.preference(
+                                    key: StockDropFramesKey.self,
+                                    value: ["pinned": geometry.frame(in: .named("stockList"))],
+                                )
+                            }
+                        })
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .stroke(group.2 == "置顶" && isPinDropTargeted ? Color.accentColor : .clear)
+                            .allowsHitTesting(false))
+                }
+                // 全部股票都置顶时，也留出可以拖回普通列表的落点。
+                if groups.count == 1, groups.first?.2 == "置顶" {
+                    Label("拖到这里取消置顶", systemImage: "pin.slash")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: StockDropFramesKey.self,
+                                value: ["unpinnedEmpty": geometry.frame(in: .named("stockList"))],
+                            )
+                        })
                 }
             }
             .padding(.horizontal, 6)
         }
         .scrollIndicators(.never)
         .frame(maxHeight: 520)
+        .background(GeometryReader { geometry in
+            Color.clear.preference(
+                key: StockDropFramesKey.self,
+                value: ["list": geometry.frame(in: .named("stockList"))],
+            )
+        })
+        .overlay(alignment: .topLeading) {
+            if let stock = draggedStock, let location = dragLocation,
+               let placement = dropPlacement(for: stock, at: location), let y = placement.lineY {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .padding(.horizontal, 6)
+                    .offset(y: y)
+                    .allowsHitTesting(false)
+            }
+        }
+        .clipped()
+        .coordinateSpace(name: "stockList")
+        .onPreferenceChange(StockDropFramesKey.self) { dropFrames = $0 }
+        .onPreferenceChange(StockRowFramesKey.self) { frames in
+            // 拖动中保留起始行位置，用松手位置决定插入点。
+            if dragLocation == nil { rowFrames = frames }
+        }
+    }
+
+    private func dropPlacement(for stock: Stock, at location: CGPoint) -> (pinned: Bool, index: Int, lineY: CGFloat?)? {
+        // 松手和提示线共用落点规则，面板外不显示提示、不执行移动。
+        guard dropFrames["list"]?.contains(location) == true else { return nil }
+        let pinned = pinDropFrame?.contains(location) == true
+        let ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
+        let isHoldingGroup = appState.config.groupHoldings && appState.effectiveShares(for: stock) != nil
+        let candidates = ordered.filter { candidate in
+            // 置顶组可跨市场；取消置顶后遵循原有持仓和市场分组规则。
+            if pinned { return candidate.isPinned }
+            if candidate.isPinned { return false }
+            let candidateIsHolding = appState.config.groupHoldings && appState.effectiveShares(for: candidate) != nil
+            return isHoldingGroup ? candidateIsHolding : !candidateIsHolding && candidate.market == stock.market
+        }
+        let next = candidates.first { candidate in
+            // 收起的分组没有行坐标，展开的行按上半区/下半区决定前后位置。
+            guard let frame = rowFrames[candidate.id] else { return false }
+            return location.y < frame.midY
+        }
+        if let next, let index = ordered.firstIndex(where: { $0.id == next.id }) {
+            return (pinned, index, rowFrames[next.id].map { $0.minY - 1 })
+        }
+        if let last = candidates.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
+            return (pinned, index + 1, rowFrames[last.id].map { $0.maxY + 1 })
+        }
+        // 空分组使用专用落点；只有拖动行时，在其原位置显示提示。
+        let frame = pinned ? pinDropFrame : dropFrames["unpinnedEmpty"] ?? rowFrames[stock.id]
+        return (pinned, ordered.count, frame?.midY)
+    }
+
+    private func moveStock(_ stock: Stock, at location: CGPoint) {
+        guard let placement = dropPlacement(for: stock, at: location) else { return }
+        var moved = stock
+        moved.isPinned = placement.pinned
+        var ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
+        ordered.insert(moved, at: placement.index)
+
+        // 一次保存置顶状态和可见顺序，保留不参与列表展示的指数数据。
+        let indexIDs = Set(AppState.marketIndices.map(\.id))
+        var updated = appState.stocks
+        let positions = updated.indices.filter { !indexIDs.contains(updated[$0].id) }
+        for (position, item) in zip(positions, ordered) {
+            updated[position] = item
+        }
+        appState.stocks = updated
+        sortByChange = false
     }
 
     private func sortValue(quote: Quote?, market: Market, mode: USPriceMode) -> Double {
         guard let q = quote else { return -Double.infinity }
-        if market == .usStock && mode == .sessionPrice, let ext = q.extendedPrice {
+        if market == .usStock, mode == .sessionPrice, let ext = q.extendedPrice {
             // 用时段价格算涨跌幅：(盘外价 - 正盘价) / 正盘价
             return q.price > 0 ? (ext - q.price) / q.price * 100 : q.changePercent
         }
         return q.changePercent
+    }
+
+    private var marketIndexCards: some View {
+        HStack(spacing: 6) {
+            ForEach(AppState.marketIndices, id: \.id) { index in
+                let quote = appState.quotes[index.id]
+                let color = quote.map { appState.quoteColor(for: $0) } ?? .secondary
+                Button {
+                    selectedStock = Stock(
+                        id: index.id,
+                        name: index.name,
+                        market: .aStock,
+                        costPrice: nil,
+                        holdingShares: nil,
+                    )
+                } label: {
+                    VStack(spacing: 6) {
+                        Text(index.name)
+                            .font(.system(size: 12, weight: .medium))
+                        Text(quote?.formattedPrice ?? "--")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(color)
+                        Text(quote?.formattedPercent ?? "--")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(color)
+                    }
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 90)
+                    .background(color.opacity(0.08))
+                    .cornerRadius(8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("查看\(index.name)分时走势")
+            }
+        }
+        .padding(.horizontal, 6)
     }
 
     var body: some View {
@@ -81,14 +259,18 @@ struct DropdownView: View {
             } else {
                 ProfitSummaryView()
 
-                if appState.stocks.isEmpty {
+                marketIndexCards
+
+                if let stock = selectedStock {
+                    StockChartView(stock: stock, onClose: { selectedStock = nil })
+                        // 切换指数时重建图表状态，并重新请求对应的分时数据。
+                        .id(stock.id)
+                } else if groupedStocks.isEmpty {
                     Text("暂无股票，点击设置添加")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding()
-                } else if let stock = selectedStock {
-                    StockChartView(stock: stock, onClose: { selectedStock = nil })
                 } else {
                     stockListView
                 }
@@ -101,5 +283,13 @@ struct DropdownView: View {
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct StockDropFramesKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

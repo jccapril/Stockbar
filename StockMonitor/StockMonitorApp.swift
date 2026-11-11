@@ -1,19 +1,19 @@
-import SwiftUI
 import AppKit
 import os
+import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_: Notification) {
         appLogger.info("applicationDidFinishLaunching")
         logToFile("applicationDidFinishLaunching — pid=\(ProcessInfo.processInfo.processIdentifier)")
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    func applicationWillTerminate(_: Notification) {
         appLogger.warning("applicationWillTerminate")
         logToFile("applicationWillTerminate")
     }
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         appLogger.warning("applicationShouldTerminate called")
         logToFile("applicationShouldTerminate called")
         return .terminateNow
@@ -24,9 +24,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct StockbarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
+    @State private var isStatusItemInserted = true
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $isStatusItemInserted) {
             DropdownView()
                 .environmentObject(appState)
         } label: {
