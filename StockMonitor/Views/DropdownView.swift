@@ -6,7 +6,10 @@ struct DropdownView: View {
     @State private var sortByChange = false
     @State private var searchText = ""
 
-    private var searchQuery: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var searchQuery: String {
+        appState.config.showListSearch ? searchText.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+    }
+
     @State private var selectedStock: Stock? = nil
     @State private var dropFrames: [String: CGRect] = [:]
     @State private var dragLocation: CGPoint?
@@ -47,7 +50,7 @@ struct DropdownView: View {
 
         // 持仓股单独分组
         if appState.config.groupHoldings {
-            let holdings = unpinnedStocks.filter { appState.effectiveShares(for: $0) != nil }
+            let holdings = unpinnedStocks.filter { $0.holdingShares != nil }
             if !holdings.isEmpty {
                 // 持仓组内按第一只股票的市场类型排序（混合市场）
                 let sortedHoldings = doSort ? holdings.sorted { a, b in
@@ -167,12 +170,12 @@ struct DropdownView: View {
         guard dropFrames["list"]?.contains(location) == true else { return nil }
         let pinned = pinDropFrame?.contains(location) == true
         let ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
-        let isHoldingGroup = appState.config.groupHoldings && appState.effectiveShares(for: stock) != nil
+        let isHoldingGroup = appState.config.groupHoldings && stock.holdingShares != nil
         let candidates = ordered.filter { candidate in
             // 置顶组可跨市场；取消置顶后遵循原有持仓和市场分组规则。
             if pinned { return candidate.isPinned }
             if candidate.isPinned { return false }
-            let candidateIsHolding = appState.config.groupHoldings && appState.effectiveShares(for: candidate) != nil
+            let candidateIsHolding = appState.config.groupHoldings && candidate.holdingShares != nil
             return isHoldingGroup ? candidateIsHolding : !candidateIsHolding && candidate.market == stock.market
         }
         let next = candidates.first { candidate in
@@ -219,41 +222,58 @@ struct DropdownView: View {
     }
 
     private var marketIndexCards: some View {
-        HStack(spacing: 6) {
-            ForEach(AppState.marketIndices, id: \.id) { index in
-                let quote = appState.quotes[index.id]
-                let color = quote.map { appState.quoteColor(for: $0) } ?? .secondary
-                Button {
-                    selectedStock = Stock(
-                        id: index.id,
-                        name: index.name,
-                        market: .aStock,
-                        costPrice: nil,
-                        holdingShares: nil,
-                    )
-                } label: {
-                    VStack(spacing: 6) {
-                        Text(index.name)
-                            .font(.system(size: 12, weight: .medium))
-                        Text(quote?.formattedPrice ?? "--")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(color)
-                        Text(quote?.formattedPercent ?? "--")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(color)
+        VStack(spacing: 4) {
+            if appState.config.showOverseasIndices {
+                Picker("指数市场", selection: $appState.indexMarket) {
+                    ForEach(IndexMarket.allCases, id: \.self) { market in
+                        Text(market.rawValue).tag(market)
                     }
-                    .monospacedDigit()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 90)
-                    .background(color.opacity(0.08))
-                    .cornerRadius(8)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("查看\(index.name)分时走势")
+                .pickerStyle(.segmented)
             }
+            GeometryReader { geometry in
+                HStack(spacing: 6) {
+                    ForEach(appState.displayedIndexMarket.stocks) { index in
+                        let quote = appState.quotes[index.id]
+                        let color = quote.map { appState.quoteColor(for: $0) } ?? .secondary
+                        Button {
+                            selectedStock = index
+                        } label: {
+                            VStack(spacing: 3) {
+                                Text(index.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                Text(quote?
+                                    .formattedPrice ??
+                                    (appState.failedIndexMarkets
+                                    .contains(appState.displayedIndexMarket) ? "加载失败" : "--"))
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(color)
+                                Text(quote?.formattedPercent ?? "--")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(color)
+                            }
+                            .monospacedDigit()
+                            .frame(width: (geometry.size.width - 12) / 3)
+                            .frame(height: 66)
+                            .background(color.opacity(0.08))
+                            .cornerRadius(8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("查看\(index.name)分时走势")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .frame(height: 66)
         }
         .padding(.horizontal, 6)
+        .task(id: appState.displayedIndexMarket) { await appState.refreshSelectedIndices() }
+        .onChange(of: appState.displayedIndexMarket) { _ in
+            if let selectedStock, AppState.marketIndices.contains(where: { $0.id == selectedStock.id }) {
+                self.selectedStock = nil
+            }
+        }
     }
 
     var body: some View {
@@ -265,7 +285,7 @@ struct DropdownView: View {
 
                 marketIndexCards
 
-                if selectedStock == nil {
+                if selectedStock == nil, appState.config.showListSearch {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                         TextField("搜索列表：名称或代码", text: $searchText)

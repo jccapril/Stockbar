@@ -10,15 +10,11 @@ struct MinutePoint: Identifiable {
 enum ChartService {
 
     static func fetchFiveDay(stock: Stock) async throws -> (points: [MinutePoint], preClose: Double) {
-        let isYahoo = stock.market == .usStock || stock.market == .krStock
+        let isYahoo = stock.yahooChartSymbol != nil
         let urlString: String
         if isYahoo {
             // 海外市场沿用 Yahoo，五日视图使用正常交易时段的五分钟采样。
-            let symbol = stock.market == .krStock
-                ? KoreanStockID.toYahooSymbol(stock.id)
-                : stock.id.replacingOccurrences(of: "usr_", with: "").replacingOccurrences(of: "$", with: "-")
-                    .uppercased()
-            guard let symbol else { throw URLError(.badURL) }
+            guard let symbol = stock.yahooChartSymbol else { throw URLError(.badURL) }
             urlString = "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=5m&range=5d"
         } else {
             urlString = "https://web.ifzq.gtimg.cn/appstock/app/day/query?code=\(stock.id)"
@@ -95,6 +91,19 @@ enum ChartService {
 
     /// 获取当日分时数据
     static func fetchIntraday(stock: Stock) async throws -> (points: [MinutePoint], preClose: Double) {
+        if stock.market == .index {
+            guard let symbol = stock.yahooChartSymbol,
+                  let url =
+                  URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1m&range=1d")
+            else { throw URLError(.badURL) }
+            var request = URLRequest(url: url)
+            request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode)
+            else { throw URLError(.badServerResponse) }
+            // 与五日共用解析器，时间标签采用交易所时区，不套用美股盘前盘后坐标。
+            return try parseYahooFiveDay(data)
+        }
         if stock.market == .usStock {
             return try await fetchUSIntraday(stockId: stock.id)
         }

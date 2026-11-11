@@ -1,6 +1,6 @@
 import Foundation
 
-final class DataService {
+enum DataService {
 
     // MARK: - 新浪财经（A股 + 美股）
 
@@ -55,8 +55,14 @@ final class DataService {
         let change        = price - yestClose
         let changePercent = change / yestClose * 100
         let updateTime    = "\(params[30]) \(params[31])".trimmingCharacters(in: .whitespaces)
-        return Quote(code: code, name: params[0], price: price, change: change,
-                     changePercent: changePercent, updateTime: updateTime)
+        return Quote(
+            code: code,
+            name: params[0],
+            price: price,
+            change: change,
+            changePercent: changePercent,
+            updateTime: updateTime,
+        )
     }
 
     // 美股字段: 0=名称, 1=现价, 2=涨跌%, 3=更新时间, 4=涨跌额, ..., 21=盘外价, 26=昨收
@@ -70,9 +76,15 @@ final class DataService {
         guard price > 0, yestClose > 0 else { return nil }
         let change        = price - yestClose
         let changePercent = change / yestClose * 100
-        return Quote(code: code, name: params[0], price: price, change: change,
-                     changePercent: changePercent, updateTime: params[3],
-                     extendedPrice: extPrice > 0 ? extPrice : nil)
+        return Quote(
+            code: code,
+            name: params[0],
+            price: price,
+            change: change,
+            changePercent: changePercent,
+            updateTime: params[3],
+            extendedPrice: extPrice > 0 ? extPrice : nil,
+        )
     }
 
     // MARK: - 腾讯证券（港股）
@@ -107,13 +119,19 @@ final class DataService {
         let updateTime: String = {
             guard let ts = meta["regularMarketTime"] as? Double, ts > 0 else { return "" }
             let fmt = DateFormatter()
-            fmt.timeZone = TimeZone(identifier: "Asia/Seoul")
+            fmt.timeZone = TimeZone(identifier: meta["exchangeTimezoneName"] as? String ?? "Asia/Seoul")
             fmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
             return fmt.string(from: Date(timeIntervalSince1970: ts))
         }()
 
-        return Quote(code: id, name: "", price: price, change: change,
-                     changePercent: pct, updateTime: updateTime)
+        return Quote(
+            code: id,
+            name: "",
+            price: price,
+            change: change,
+            changePercent: pct,
+            updateTime: updateTime,
+        )
     }
 
     /// 并发拉取韩股报价。`ids` 为 Stockbar 内部 ID（如 `kr_005930.ks`）。
@@ -124,7 +142,9 @@ final class DataService {
             for id in ids {
                 guard let symbol = KoreanStockID.toYahooSymbol(id) else { continue }
                 group.addTask {
-                    guard let url = URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1m&range=1d") else {
+                    guard let url =
+                        URL(string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1m&range=1d")
+                        else {
                         return (id, nil)
                     }
                     var req = URLRequest(url: url)
@@ -140,6 +160,34 @@ final class DataService {
                 if let q { out[id] = q }
             }
             return out
+        }
+    }
+
+    /// 顶部海外指数，与已有韩股行情共用 Yahoo 的 chart meta 格式。
+    static func fetchIndexQuotes(ids: [String]) async throws -> [String: Quote] {
+        try await withThrowingTaskGroup(of: (String, Quote).self) { group in
+            for id in ids {
+                group.addTask {
+                    guard let symbol = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                          let url =
+                          URL(
+                              string: "https://query1.finance.yahoo.com/v8/finance/chart/\(symbol)?interval=1m&range=1d",
+                          )
+                    else { throw URLError(.badURL) }
+                    var request = URLRequest(url: url)
+                    request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
+                          let quote = await parseKoreanChartMeta(data, id: id)
+                    else { throw URLError(.cannotParseResponse) }
+                    return (id, quote)
+                }
+            }
+            var quotes: [String: Quote] = [:]
+            for try await (id, quote) in group {
+                quotes[id] = quote
+            }
+            return quotes
         }
     }
 
@@ -168,8 +216,14 @@ final class DataService {
                   price > 0, yestClose > 0 else { continue }
             let change        = price - yestClose
             let changePercent = change / yestClose * 100
-            result[rawCode] = Quote(code: rawCode, name: fields[1], price: price, change: change,
-                                    changePercent: changePercent, updateTime: fields[30])
+            result[rawCode] = Quote(
+                code: rawCode,
+                name: fields[1],
+                price: price,
+                change: change,
+                changePercent: changePercent,
+                updateTime: fields[30],
+            )
         }
         return result
     }

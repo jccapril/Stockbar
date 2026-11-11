@@ -5,6 +5,7 @@ enum Market: String, Codable, CaseIterable {
     case hkStock = "港股"
     case usStock = "美股"
     case krStock = "韩股"
+    case index = "指数"
 
     static func from(code: String) -> Market {
         if code.hasPrefix("hk")   { return .hkStock }
@@ -21,6 +22,16 @@ struct Stock: Identifiable, Equatable {
     var costPrice: Double?      // 持仓成本价（nil = 未设置）
     var holdingShares: Double?  // 持仓股数（nil = 未设置）
     var isPinned: Bool = false
+
+    var yahooChartSymbol: String? {
+        switch market {
+        case .index: id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+        case .krStock: KoreanStockID.toYahooSymbol(id)
+        case .usStock: id.replacingOccurrences(of: "usr_", with: "").replacingOccurrences(of: "$", with: "-")
+            .uppercased()
+        case .aStock, .hkStock: nil
+        }
+    }
 
     func matchesListSearch(_ query: String) -> Bool {
         query.isEmpty || name.localizedStandardContains(query) || id.localizedStandardContains(query)
@@ -65,5 +76,23 @@ extension Stock: Codable {
         costPrice    = try c.decodeIfPresent(Double.self, forKey: .costPrice)
         holdingShares = try c.decodeIfPresent(Double.self, forKey: .holdingShares)
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
+}
+
+/// 顶部指数的固定市场分组，不加入用户自选股列表。
+enum IndexMarket: String, CaseIterable {
+    case china = "A股"
+    case korea = "韩国"
+    case japan = "日本"
+    case unitedStates = "美国"
+
+    var stocks: [Stock] {
+        let items: [(String, String)] = switch self {
+        case .china: [("sh000001", "上证"), ("sz399006", "创业"), ("sh000688", "科创")]
+        case .korea: [("^KS11", "KOSPI")]
+        case .japan: [("^N225", "日经225")]
+        case .unitedStates: [("^DJI", "道琼斯"), ("^IXIC", "纳斯达克"), ("^GSPC", "标普500")]
+        }
+        return items.map { Stock(id: $0.0, name: $0.1, market: self == .china ? .aStock : .index) }
     }
 }

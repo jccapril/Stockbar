@@ -3,13 +3,10 @@ import Foundation
 
 extension ChartService {
     static func fetchCandles(stock: Stock, period: CandlePeriod) async throws -> [CandlePoint] {
-        let yahoo = stock.market == .usStock || stock.market == .krStock
+        let yahoo = stock.yahooChartSymbol != nil
         let urlString: String
         if yahoo {
-            let symbol = stock.market == .krStock ? KoreanStockID.toYahooSymbol(stock.id)
-                : stock.id.replacingOccurrences(of: "usr_", with: "").replacingOccurrences(of: "$", with: "-")
-                    .uppercased()
-            guard let symbol else { throw URLError(.badURL) }
+            guard let symbol = stock.yahooChartSymbol else { throw URLError(.badURL) }
             let years = period == .daily ? 2 : period == .weekly ? 5 : 20
             let end = Int(Date().timeIntervalSince1970)
             let start = end - years * 366 * 86400

@@ -15,6 +15,7 @@ struct ExchangeRates {
         // 先统一转成 CNY
         let inCny: Double
         switch market {
+        case .index: return amount // 指数是点数，不参与汇率换算。
         case .aStock:  inCny = amount
         case .hkStock: inCny = amount * hkdToCny
         case .usStock: inCny = amount * usdToCny
@@ -30,7 +31,7 @@ struct ExchangeRates {
     }
 }
 
-final class CurrencyService {
+enum CurrencyService {
 
     /// 从新浪财经获取 USD/CNY、USD/HKD、USD/KRW 汇率，失败时返回内置兜底值
     static func fetchRates() async -> ExchangeRates {

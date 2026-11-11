@@ -85,8 +85,9 @@ struct AppSettings {
     var displayCurrency: DisplayCurrency = .cny
     var sortRule: SortRule               = .changeDesc
     var usPriceMode: USPriceMode         = .sessionPrice
+    var showListSearch = true
+    var showOverseasIndices = true
     var groupHoldings: Bool              = false
-    var activeWatchlistId: String?    // nil = 真实持仓
 
     static let validRefreshIntervals = [3, 5, 10, 30]
     static let validRotationIntervals = [3, 5, 10, 15, 30, 60]
@@ -98,14 +99,16 @@ struct AppSettings {
 // MARK: - Codable（容错：缺失字段使用默认值）
 extension AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
+        case showListSearch, showOverseasIndices
         case statusBarQuoteDisplay
         case statusBarRotationEnabled, statusBarRotationInterval
-        case statusBarStockId, refreshInterval, colorScheme, displayCurrency, sortRule, usPriceMode, groupHoldings,
-             activeWatchlistId
+        case statusBarStockId, refreshInterval, colorScheme, displayCurrency, sortRule, usPriceMode, groupHoldings
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        showListSearch = try c.decodeIfPresent(Bool.self, forKey: .showListSearch) ?? true
+        showOverseasIndices = try c.decodeIfPresent(Bool.self, forKey: .showOverseasIndices) ?? true
         statusBarRotationEnabled = try c.decodeIfPresent(Bool.self, forKey: .statusBarRotationEnabled) ?? false
         let rotationInterval = try c.decodeIfPresent(Int.self, forKey: .statusBarRotationInterval) ?? 5
         statusBarRotationInterval = Self.validRotationIntervals.contains(rotationInterval) ? rotationInterval : 5
@@ -120,6 +123,5 @@ extension AppSettings: Codable {
         usPriceMode        = (try? c.decodeIfPresent(USPriceMode.self,     forKey: .usPriceMode))         ??
             .sessionPrice
         groupHoldings      = (try? c.decodeIfPresent(Bool.self,            forKey: .groupHoldings))       ?? false
-        activeWatchlistId  = try? c.decodeIfPresent(String.self,           forKey: .activeWatchlistId)
     }
 }

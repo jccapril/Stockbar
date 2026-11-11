@@ -90,8 +90,8 @@ struct StockbarApp: App {
 
         Window("设置持仓", id: "holding-editor") {
             if let stock = appState.holdingEditorStock {
-                HoldingEditorWindow(stock: stock, watchlistId: appState.holdingEditorWatchlistId)
-                    .id("\(stock.id)-\(appState.holdingEditorWatchlistId ?? "real")")
+                HoldingEditorWindow(stock: stock)
+                    .id(stock.id)
                     .environmentObject(appState)
             }
         }

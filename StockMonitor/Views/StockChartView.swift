@@ -41,6 +41,7 @@ struct StockChartView: View {
         case .hkStock: return 0...329
         case .usStock: return 0...959
         case .krStock: return 0...389
+        case .index: return 0...max(points.last?.id ?? 0, 1)
         }
     }
 
@@ -55,6 +56,11 @@ struct StockChartView: View {
             }
         }
         switch stock.market {
+        case .index:
+            // 指数按实际有效采样排列，标签直接读取当地交易时间。
+            guard !points.isEmpty else { return [] }
+            let positions = Set((0...4).map { $0 * (points.count - 1) / 4 }).sorted()
+            return positions.map { (points[$0].id, points[$0].time) }
         case .aStock:
             return [(0, "09:30"), (60, "10:30"), (120, "13:00"), (180, "14:00"), (239, "15:00")]
         case .hkStock:

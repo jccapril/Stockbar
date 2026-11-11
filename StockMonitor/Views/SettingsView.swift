@@ -9,7 +9,6 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var editingStock: Stock?
-    @State private var newWatchlistName = ""
 
     var body: some View {
         ScrollView {
@@ -74,6 +73,11 @@ struct SettingsView: View {
                     }
                 }
 
+                section("列表显示") {
+                    Toggle("显示列表搜索", isOn: $appState.config.showListSearch)
+                    Toggle("显示海外指数市场", isOn: $appState.config.showOverseasIndices)
+                }
+
                 // 持仓股分组
                 section("持仓股展示") {
                     Toggle("持仓股单独分组置顶", isOn: Binding(
@@ -81,58 +85,6 @@ struct SettingsView: View {
                         set: { appState.config.groupHoldings = $0 },
                     ))
                     .padding(.leading, 8)
-                }
-
-                // 观察仓管理
-                section("观察仓") {
-                    // 当前选择
-                    Picker("", selection: Binding(
-                        get: { appState.config.activeWatchlistId ?? "__real__" },
-                        set: { appState.config.activeWatchlistId = $0 == "__real__" ? nil : $0 },
-                    )) {
-                        Text("真实持仓").tag("__real__")
-                        ForEach(appState.watchlists) { wl in
-                            Text(wl.name).tag(wl.id)
-                        }
-                    }.pickerStyle(.menu)
-
-                    // 新建
-                    HStack(spacing: 6) {
-                        TextField("新观察仓名称", text: $newWatchlistName)
-                            .textFieldStyle(.roundedBorder)
-                        Button("新建") {
-                            let name = newWatchlistName.trimmingCharacters(in: .whitespaces)
-                            guard !name.isEmpty else { return }
-                            appState.watchlists.append(Watchlist(name: name))
-                            newWatchlistName = ""
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-                    .padding(.leading, 8)
-
-                    // 列表（删除）
-                    if !appState.watchlists.isEmpty {
-                        ForEach(appState.watchlists) { wl in
-                            HStack {
-                                Text(wl.name).font(.system(size: 12))
-                                Spacer()
-                                if appState.config.activeWatchlistId == wl.id {
-                                    Text("当前").font(.caption).foregroundColor(.accentColor)
-                                }
-                                Button {
-                                    appState.watchlists.removeAll { $0.id == wl.id }
-                                    if appState.config.activeWatchlistId == wl.id {
-                                        appState.config.activeWatchlistId = nil
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(.red)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
                 }
 
                 // 排序规则
@@ -257,12 +209,12 @@ struct SettingsView: View {
     /// 其它的排在后面；组内保持原顺序。
     private var sortedStocksForSettings: [Stock] {
         let withHolding = appState.stocks.filter {
-            appState.effectiveCostPrice(for: $0) != nil
-                && appState.effectiveShares(for: $0) != nil
+            $0.costPrice != nil
+                && $0.holdingShares != nil
         }
         let withoutHolding = appState.stocks.filter {
-            appState.effectiveCostPrice(for: $0) == nil
-                || appState.effectiveShares(for: $0) == nil
+            $0.costPrice == nil
+                || $0.holdingShares == nil
         }
         return withHolding + withoutHolding
     }
@@ -303,8 +255,8 @@ struct SettingsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(stock.name).font(.system(size: 12))
-                if let c = appState.effectiveCostPrice(for: stock),
-                   let sh = appState.effectiveShares(for: stock) {
+                if let c = stock.costPrice,
+                   let sh = stock.holdingShares {
                     Text("成本 \(String(format: "%.3f", c)) × \(String(format: "%.0f", sh)) 股")
                         .font(.caption).foregroundColor(.secondary)
                 } else {
@@ -329,7 +281,6 @@ struct SettingsView: View {
     private func inlineEditView(_ stock: Stock) -> some View {
         HoldingEditorView(
             stock: stock,
-            watchlistId: appState.config.activeWatchlistId,
             onClose: { editingStock = nil },
         )
     }

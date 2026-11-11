@@ -10,8 +10,6 @@ struct StockRowView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showDeleteConfirmation = false
     @State private var showClearHoldingConfirmation = false
-    @State private var clearingWatchlistId: String?
-    @State private var clearingAccountName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -36,9 +34,7 @@ struct StockRowView: View {
             } else if showClearHoldingConfirmation {
                 Text("清除\(stock.name)的持仓？")
                     .font(.system(size: 12, weight: .medium))
-                Text(clearingWatchlistId == nil
-                     ? "将清除真实持仓的成本价和股数，保留股票。"
-                     : "将清除「\(clearingAccountName)」中的持仓，之后沿用真实持仓，保留股票。")
+                Text("将清除持仓的成本价和股数，保留股票。")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack {
@@ -81,15 +77,12 @@ struct StockRowView: View {
             Menu {
                 Button {
                     appState.holdingEditorStock = stock
-                    appState.holdingEditorWatchlistId = appState.config.activeWatchlistId
                     openWindow(id: "holding-editor")
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
                     Label("设置持仓", systemImage: "pencil")
                 }
                 Button(role: .destructive) {
-                    clearingWatchlistId = appState.config.activeWatchlistId
-                    clearingAccountName = appState.watchlists.first { $0.id == clearingWatchlistId }?.name ?? "真实持仓"
                     showClearHoldingConfirmation = true
                 } label: {
                     Label("清除持仓", systemImage: "eraser")
@@ -134,18 +127,11 @@ struct StockRowView: View {
     }
 
     private var hasHoldingToClear: Bool {
-        if let watchlistId = appState.config.activeWatchlistId {
-            return appState.watchlists.first { $0.id == watchlistId }?.entries[stock.id] != nil
-        }
-        return stock.costPrice != nil || stock.holdingShares != nil
+        stock.costPrice != nil || stock.holdingShares != nil
     }
 
     private func clearHolding() {
-        if let watchlistId = clearingWatchlistId {
-            if let index = appState.watchlists.firstIndex(where: { $0.id == watchlistId }) {
-                appState.watchlists[index].entries[stock.id] = nil
-            }
-        } else if let index = appState.stocks.firstIndex(where: { $0.id == stock.id }) {
+        if let index = appState.stocks.firstIndex(where: { $0.id == stock.id }) {
             var updated = appState.stocks
             updated[index].costPrice = nil
             updated[index].holdingShares = nil
@@ -188,7 +174,7 @@ struct StockRowView: View {
                                     : Color(appState.config.downColorName),
                             )
                     }
-                    if appState.effectiveShares(for: stock) == nil {
+                    if stock.holdingShares == nil {
                         Text("未持仓")
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
