@@ -9,6 +9,9 @@ struct StockRowView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.openWindow) private var openWindow
     @State private var showDeleteConfirmation = false
+    @State private var showClearHoldingConfirmation = false
+    @State private var clearingWatchlistId: String?
+    @State private var clearingAccountName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -26,6 +29,24 @@ struct StockRowView: View {
                         appState.stocks.removeAll { $0.id == stock.id }
                         // 删除状态栏正在展示的股票后，恢复自动选择。
                         if appState.statusBarStockId == stock.id { appState.statusBarStockId = "" }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else if showClearHoldingConfirmation {
+                Text("清除\(stock.name)的持仓？")
+                    .font(.system(size: 12, weight: .medium))
+                Text(clearingWatchlistId == nil
+                     ? "将清除真实持仓的成本价和股数，保留股票。"
+                     : "将清除「\(clearingAccountName)」中的持仓，之后沿用真实持仓，保留股票。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack {
+                    Spacer()
+                    Button("取消") { showClearHoldingConfirmation = false }
+                    Button("确认清除", role: .destructive) {
+                        clearHolding()
+                        showClearHoldingConfirmation = false
                     }
                 }
                 .buttonStyle(.bordered)
@@ -66,6 +87,14 @@ struct StockRowView: View {
                 } label: {
                     Label("设置持仓", systemImage: "pencil")
                 }
+                Button(role: .destructive) {
+                    clearingWatchlistId = appState.config.activeWatchlistId
+                    clearingAccountName = appState.watchlists.first { $0.id == clearingWatchlistId }?.name ?? "真实持仓"
+                    showClearHoldingConfirmation = true
+                } label: {
+                    Label("清除持仓", systemImage: "eraser")
+                }
+                .disabled(!hasHoldingToClear)
                 Button {
                     appState.selectedAlertStock = stock
                     openWindow(id: "price-alerts")
@@ -101,6 +130,26 @@ struct StockRowView: View {
             .fixedSize()
             .help("股票操作")
             .accessibilityLabel("\(stock.name)的操作")
+        }
+    }
+
+    private var hasHoldingToClear: Bool {
+        if let watchlistId = appState.config.activeWatchlistId {
+            return appState.watchlists.first { $0.id == watchlistId }?.entries[stock.id] != nil
+        }
+        return stock.costPrice != nil || stock.holdingShares != nil
+    }
+
+    private func clearHolding() {
+        if let watchlistId = clearingWatchlistId {
+            if let index = appState.watchlists.firstIndex(where: { $0.id == watchlistId }) {
+                appState.watchlists[index].entries[stock.id] = nil
+            }
+        } else if let index = appState.stocks.firstIndex(where: { $0.id == stock.id }) {
+            var updated = appState.stocks
+            updated[index].costPrice = nil
+            updated[index].holdingShares = nil
+            appState.stocks = updated
         }
     }
 
