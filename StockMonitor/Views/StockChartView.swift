@@ -157,6 +157,9 @@ struct StockChartView: View {
         let labelPositions = xAxisLabels.map(\.0)
         let isUS = stock.market == .usStock && period == .intraday
         let labelY = yMin + (yMax - yMin) * 0.88
+        let dayBoundaries = zip(points, points.dropFirst()).compactMap { previous, next in
+            previous.day != next.day ? (Double(previous.id) + Double(next.id)) / 2 : nil
+        }
 
         return Chart {
             // 美股时段背景色块
@@ -212,13 +215,23 @@ struct StockChartView: View {
                 )
                 .foregroundStyle(lineColor.opacity(0.12))
             }
+
+            if period == .fiveDays {
+                ForEach(dayBoundaries, id: \.self) { boundary in
+                    RuleMark(x: .value("交易日分界", boundary))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .foregroundStyle(Color.secondary.opacity(0.5))
+                }
+            }
         }
         .chartXScale(domain: fullDayRange)
         .chartYScale(domain: yMin...yMax)
         .chartXAxis {
             AxisMarks(values: labelPositions) { value in
-                AxisGridLine()
-                    .foregroundStyle(Color.secondary.opacity(0.2))
+                if period == .intraday {
+                    AxisGridLine()
+                        .foregroundStyle(Color.secondary.opacity(0.2))
+                }
                 AxisValueLabel {
                     if let i = value.as(Int.self),
                        let label = xAxisLabels.first(where: { $0.0 == i })?.1 {
