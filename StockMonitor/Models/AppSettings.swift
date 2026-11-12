@@ -76,8 +76,11 @@ enum StatusBarQuoteDisplay: String, Codable, CaseIterable {
 }
 
 struct AppSettings {
-    var aiAPIAddress = ""
-    var aiModel = ""
+    static let defaultAIAPIAddress = "https://api.openai.com/v1"
+    static let defaultAIModel = "gpt-5.4-mini"
+
+    var aiAPIAddress = Self.defaultAIAPIAddress
+    var aiModel = Self.defaultAIModel
     var statusBarStockId: String         = ""
     var statusBarQuoteDisplay: StatusBarQuoteDisplay = .price
     var statusBarRotationEnabled = false
@@ -110,8 +113,13 @@ extension AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? ""
-        aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
+        aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? Self.defaultAIAPIAddress
+        aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? Self.defaultAIModel
+        // 旧版未配置 AI 时保存的是两个空字符串，升级后填入默认服务。
+        if aiAPIAddress.isEmpty, aiModel.isEmpty {
+            aiAPIAddress = Self.defaultAIAPIAddress
+            aiModel = Self.defaultAIModel
+        }
         showListSearch = try c.decodeIfPresent(Bool.self, forKey: .showListSearch) ?? true
         showOverseasIndices = try c.decodeIfPresent(Bool.self, forKey: .showOverseasIndices) ?? true
         statusBarRotationEnabled = try c.decodeIfPresent(Bool.self, forKey: .statusBarRotationEnabled) ?? false

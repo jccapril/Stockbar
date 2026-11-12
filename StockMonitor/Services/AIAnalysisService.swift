@@ -103,6 +103,49 @@ enum AIAnalysisService {
                 ["role": "user", "content": content],
             ],
         ])
+        let data = try await send(request)
+        let result = try JSONDecoder().decode(Response.self, from: data)
+        guard let text = result.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            throw Failure(message: "模型未返回分析正文，请检查模型是否支持 Chat Completions。")
+        }
+        guard result.choices.first?.finish_reason != "length" else {
+            throw Failure(message: "模型输出被截断，请调整服务端输出限制后重试。")
+        }
+        return Analysis(text: text, lastTradingDay: last.date, generatedAt: Date(), model: model, horizon: horizon)
+    }
+
+    static func fetchModels(address: String, token: String) async throws -> [String] {
+        let url = try endpoint(address).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("models")
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let data = try await send(request)
+        struct Models: Decodable {
+            struct Model: Decodable { let id: String }
+            let data: [Model]
+        }
+        let models = try JSONDecoder().decode(Models.self, from: data)
+        return Array(Set(models.data.map(\.id))).sorted()
+    }
+
+    static func testConnection(address: String, model: String, token: String) async throws {
+        var request = try URLRequest(url: endpoint(address), timeoutInterval: 60)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": model, "stream": false,
+            "messages": [["role": "user", "content": "Reply with OK only."]],
+        ])
+        let data = try await send(request)
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        guard let content = response.choices.first?.message.content, !content.isEmpty else {
+            throw Failure(message: "接口已响应，但模型没有返回正文。")
+        }
+    }
+
+    private static func send(_ request: URLRequest) async throws -> Data {
         // API Key 只发送到用户指定的地址，拒绝重定向，避免凭据或行情被转发。
         let session = URLSession(configuration: .ephemeral, delegate: AIRedirectBlocker(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
@@ -117,15 +160,7 @@ enum AIAnalysisService {
             default: throw Failure(message: "AI 请求失败（HTTP \(http.statusCode)），请检查地址和模型名称。")
             }
         }
-        let result = try JSONDecoder().decode(Response.self, from: data)
-        guard let text = result.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else {
-            throw Failure(message: "模型未返回分析正文，请检查模型是否支持 Chat Completions。")
-        }
-        guard result.choices.first?.finish_reason != "length" else {
-            throw Failure(message: "模型输出被截断，请调整服务端输出限制后重试。")
-        }
-        return Analysis(text: text, lastTradingDay: last.date, generatedAt: Date(), model: model, horizon: horizon)
+        return data
     }
 
     static func marketData(stock: Stock, quote: Quote?, candles: [CandlePoint], horizon: String) throws -> String {
