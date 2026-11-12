@@ -27,6 +27,15 @@ struct SettingsView: View {
 
                 Divider()
 
+                section("主题") {
+                    Picker("", selection: $appState.config.theme) {
+                        ForEach(AppTheme.allCases, id: \.self) { theme in
+                            Text(theme.displayName).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 // 状态栏显示
                 section("状态栏显示") {
                     Picker("", selection: Binding(
@@ -162,6 +171,19 @@ struct SettingsView: View {
                     Text("自填 API 地址、模型与 Key，仅在手动分析时发送公开行情。")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                }
+
+                section("更新") {
+                    Toggle("自动检查更新", isOn: $appState.config.automaticUpdatesEnabled)
+                        .toggleStyle(.checkbox)
+                    Text("启动时及每隔 6 小时检查新版，显示更新内容，可选择更新、取消或跳过此版本。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if Bundle.main.bundleIdentifier != "com.vgearen.Stockbar" {
+                        Text("开发版不自动检查正式版更新。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
 
                 // 关于 & 更新

@@ -39,6 +39,7 @@ struct CandlePoint: Identifiable {
     let close: Double
     let high: Double
     let low: Double
+    var volumeInLots: Double? // 仅 A 股/ETF 日 K，腾讯原始单位：手
     var previousClose: Double?
 
     var changePercent: Double? {

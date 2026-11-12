@@ -40,7 +40,13 @@ extension ChartService {
                   let closeText = row[2] as? String, let close = Double(closeText),
                   let highText = row[3] as? String, let high = Double(highText),
                   let lowText = row[4] as? String, let low = Double(lowText) else { continue }
-            bars.append(CandlePoint(date: date, open: open, close: close, high: high, low: low))
+            var bar = CandlePoint(date: date, open: open, close: close, high: high, low: low)
+            // 港股数量单位不同，首版只保留 A 股接口的日成交手数。
+            if period == .daily, !code.hasPrefix("hk"), row.count > 5,
+               let text = row[5] as? String, let volume = Double(text), volume.isFinite, volume >= 0 {
+                bar.volumeInLots = volume
+            }
+            bars.append(bar)
         }
         return try normalizeCandles(bars, period: period)
     }
@@ -105,6 +111,7 @@ extension ChartService {
                 close: bar.close,
                 high: max(previous?.high ?? bar.high, bar.high),
                 low: min(previous?.low ?? bar.low, bar.low),
+                volumeInLots: bar.volumeInLots,
             )
         }
         var result: [CandlePoint] = []

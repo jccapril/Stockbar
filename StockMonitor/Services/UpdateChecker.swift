@@ -31,6 +31,8 @@ final class UpdateChecker: ObservableObject {
 
     static let shared = UpdateChecker()
     private init() {}
+    private var automaticTask: Task<Void, Never>?
+    private let skippedVersionKey = "skippedUpdateVersion"
 
     @Published var isBusy   = false
     @Published var status   = ""
@@ -43,9 +45,28 @@ final class UpdateChecker: ObservableObject {
         Task { await run() }
     }
 
+    func configureAutomaticUpdates(enabled: Bool) {
+        automaticTask?.cancel()
+        automaticTask = nil
+        // 开发版不参与正式版自动更新，避免覆盖开发环境。
+        guard enabled, Bundle.main.bundleIdentifier == "com.vgearen.Stockbar" else { return }
+        automaticTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                if let self, !isBusy {
+                    isBusy = true
+                    status = "正在检查…"
+                    await run(automatically: true)
+                }
+                do {
+                    try await Task.sleep(nanoseconds: 6 * 60 * 60 * 1_000_000_000)
+                } catch { return }
+            }
+        }
+    }
+
     // MARK: - 主流程
 
-    private func run() async {
+    private func run(automatically: Bool = false) async {
         // 1. 获取最新 release
         guard let url = URL(string: "https://api.github.com/repos/jccapril/Stockbar/releases/latest")
             else { return finish("检查失败") }
@@ -58,12 +79,18 @@ final class UpdateChecker: ObservableObject {
             return finish("检查失败，请检查网络")
         }
 
+        guard !Task.isCancelled else { return finish("") }
         let latestTag = release.tagName
         let latest  = latestTag.hasPrefix("v") ? String(latestTag.dropFirst()) : latestTag
         let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
 
         guard isNewer(latest, than: current) else {
             return finish("已是最新版本")
+        }
+
+        // 跳过只影响后台提醒；手动检查仍可主动安装该版本。
+        if automatically, UserDefaults.standard.string(forKey: skippedVersionKey) == latest {
+            return finish("")
         }
 
         // 2. 找到 DMG 下载地址
@@ -74,11 +101,17 @@ final class UpdateChecker: ObservableObject {
             return finish("未找到安装包")
         }
 
-        // 3. 弹窗确认
-        isBusy = false
-        status = ""
-        let confirmed = confirmUpdate(latest: latest, current: current)
-        guard confirmed else { return }
+        // 自动检查只负责提醒，下载和安装都必须由用户点击“更新”开始。
+        switch confirmUpdate(latest: latest, current: current, notes: release.body) {
+        case .alertFirstButtonReturn:
+            UserDefaults.standard.removeObject(forKey: skippedVersionKey)
+        case .alertThirdButtonReturn:
+            UserDefaults.standard.set(latest, forKey: skippedVersionKey)
+            return finish("已跳过 v\(latest)")
+        default:
+            return finish("")
+        }
+        guard !Task.isCancelled else { return finish("") }
 
         // 4. 下载 + 安装
         isBusy = true
@@ -102,6 +135,7 @@ final class UpdateChecker: ObservableObject {
             guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
                 return finish("下载安装包失败")
             }
+            guard !Task.isCancelled else { return finish("") }
             try fm.moveItem(at: localURL, to: dmgPath)
         } catch {
             return finish("下载失败")
@@ -123,6 +157,7 @@ final class UpdateChecker: ObservableObject {
             logToFile("UpdateChecker: SHA-256 verified OK")
         }
 
+        guard !Task.isCancelled else { return finish("") }
         status = "正在安装…"
 
         // 挂载 DMG
@@ -219,13 +254,37 @@ final class UpdateChecker: ObservableObject {
 
     // MARK: - 确认弹窗
 
-    private func confirmUpdate(latest: String, current: String) -> Bool {
+    private func confirmUpdate(latest: String, current: String, notes: String?) -> NSApplication.ModalResponse {
         let alert = NSAlert()
         alert.messageText = "发现新版本 v\(latest)"
-        alert.informativeText = "当前版本 v\(current)，是否立即更新？"
-        alert.addButton(withTitle: "立即更新")
-        alert.addButton(withTitle: "暂不更新")
-        return alert.runModal() == .alertFirstButtonReturn
+        alert.informativeText = "当前版本 v\(current)。更新将下载、校验、安装并重启应用。"
+        alert.addButton(withTitle: "更新")
+        let cancel = alert.addButton(withTitle: "取消")
+        cancel.keyEquivalent = "\u{1b}"
+        alert.addButton(withTitle: "跳过此版本")
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 250))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let text = NSTextView(frame: scroll.bounds)
+        text.isEditable = false
+        text.isSelectable = true
+        text.font = NSFont.systemFont(ofSize: 13)
+        text.textColor = .labelColor
+        text.textContainerInset = NSSize(width: 10, height: 10)
+        text.isVerticallyResizable = true
+        text.isHorizontallyResizable = false
+        text.autoresizingMask = [.width]
+        text.textContainer?.widthTracksTextView = true
+        let content = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        text.string = content.isEmpty ? "此版本未提供更新说明。" : content
+        scroll.documentView = text
+        alert.accessoryView = scroll
+        // 菜单栏面板失焦会关闭，更新说明使用独立的前台模态窗口。
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.level = .floating
+        alert.window.hidesOnDeactivate = false
+        return alert.runModal()
     }
 
     // MARK: - 辅助

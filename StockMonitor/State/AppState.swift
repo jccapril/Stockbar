@@ -20,6 +20,9 @@ final class AppState: ObservableObject {
     @Published var config: AppSettings = AppSettings() {
         didSet {
             saveSettings(config)
+            if oldValue.automaticUpdatesEnabled != config.automaticUpdatesEnabled {
+                UpdateChecker.shared.configureAutomaticUpdates(enabled: config.automaticUpdatesEnabled)
+            }
             if oldValue.statusBarRotationEnabled != config.statusBarRotationEnabled ||
                 oldValue.statusBarRotationInterval != config.statusBarRotationInterval {
                 configureStatusBarRotation()
@@ -181,6 +184,7 @@ final class AppState: ObservableObject {
         let stockCount = stocks.count
         appLogger.info("AppState stocks loaded: \(stockCount)")
         logToFile("AppState stocks loaded: \(stockCount)")
+        UpdateChecker.shared.configureAutomaticUpdates(enabled: config.automaticUpdatesEnabled)
         setupScheduler()
         configureStatusBarRotation()
         appLogger.info("AppState init complete")

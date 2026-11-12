@@ -28,7 +28,7 @@ struct AIAnalysisView: View {
             .disabled(requestTask != nil)
             .onChange(of: horizon) { _ in analysis = nil; errorMessage = "" }
 
-            Text("使用最近最多 120 根日 K 和带时间的公开报价。分析不含新闻、财报或成交量，也不了解你的持仓与成本。")
+            Text("使用最近最多 120 根日 K 和公开报价；A 股/ETF 另含成交量、成交额、换手率、量比（以接口有效字段为准）。不含新闻、财报、持仓与成本。")
                 .font(.caption).foregroundColor(.secondary)
             if !appState.config.aiAPIAddress.isEmpty {
                 Text("发送至：\(appState.config.aiAPIAddress)\n模型：\(appState.config.aiModel)")

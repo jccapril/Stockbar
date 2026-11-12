@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum DisplayCurrency: String, Codable, CaseIterable {
     case cny = "CNY"
@@ -75,7 +76,29 @@ enum StatusBarQuoteDisplay: String, Codable, CaseIterable {
     }
 }
 
+enum AppTheme: String, Codable, CaseIterable {
+    case system, dark, light
+
+    var displayName: String {
+        switch self {
+        case .system: "跟随系统"
+        case .dark: "暗色"
+        case .light: "亮色"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .dark: .dark
+        case .light: .light
+        }
+    }
+}
+
 struct AppSettings {
+    var theme: AppTheme = .system
+    var automaticUpdatesEnabled = false
     static let defaultAIAPIAddress = "https://api.openai.com/v1"
     static let defaultAIModel = "gpt-5.4-mini"
 
@@ -104,6 +127,7 @@ struct AppSettings {
 // MARK: - Codable（容错：缺失字段使用默认值）
 extension AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
+        case theme, automaticUpdatesEnabled
         case aiAPIAddress, aiModel
         case showListSearch, showOverseasIndices
         case statusBarQuoteDisplay
@@ -113,6 +137,8 @@ extension AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        automaticUpdatesEnabled = try c.decodeIfPresent(Bool.self, forKey: .automaticUpdatesEnabled) ?? false
+        theme = try c.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
         aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? Self.defaultAIAPIAddress
         aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? Self.defaultAIModel
         // 旧版未配置 AI 时保存的是两个空字符串，升级后填入默认服务。

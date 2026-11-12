@@ -45,6 +45,7 @@ struct StockbarApp: App {
         MenuBarExtra(isInserted: $isStatusItemInserted) {
             DropdownView()
                 .environmentObject(appState)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
         } label: {
             MenuBarLabel()
                 .environmentObject(appState)
@@ -61,6 +62,7 @@ struct StockbarApp: App {
                 )
                     .id("\(stock.id)-\(appState.expandedChartPeriod.rawValue)")
                     .environmentObject(appState)
+                    .preferredColorScheme(appState.config.theme.preferredColorScheme)
                     .padding(16)
                     .frame(minWidth: 640, minHeight: 400)
                     .background(ChartWindowFrameSaver())
@@ -74,6 +76,7 @@ struct StockbarApp: App {
                 AIAnalysisView(stock: stock)
                     .id(stock.id)
                     .environmentObject(appState)
+                    .preferredColorScheme(appState.config.theme.preferredColorScheme)
             }
         }
         .defaultSize(width: 620, height: 640)
@@ -81,6 +84,7 @@ struct StockbarApp: App {
 
         Window("AI 设置", id: "ai-settings") {
             AISettingsView().environmentObject(appState)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
         }
         .windowResizability(.contentSize)
 
@@ -89,6 +93,7 @@ struct StockbarApp: App {
                 PriceAlertView(stock: stock)
                     .id(stock.id)
                     .environmentObject(appState)
+                    .preferredColorScheme(appState.config.theme.preferredColorScheme)
                     .environmentObject(appState.priceAlerts)
             }
         }
@@ -98,6 +103,7 @@ struct StockbarApp: App {
         Window("新增股票", id: "add-stock") {
             ScrollView { AddStockView().padding(20) }
                 .environmentObject(appState)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
                 .frame(minWidth: 420, minHeight: 320)
         }
         .defaultSize(width: 460, height: 480)
@@ -108,6 +114,7 @@ struct StockbarApp: App {
                 HoldingEditorWindow(stock: stock)
                     .id(stock.id)
                     .environmentObject(appState)
+                    .preferredColorScheme(appState.config.theme.preferredColorScheme)
             }
         }
         .windowResizability(.contentSize)
