@@ -60,6 +60,12 @@ jobs:
           APP_PATH=$(find build -name "Stockbar.app" -maxdepth 6 | head -1)
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Sign app bundle
+        run: |
+          APP_PATH="${{ steps.locate.outputs.app_path }}"
+          codesign --force --sign - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
       - name: Create DMG
         run: |
           APP_PATH="${{ steps.locate.outputs.app_path }}"
