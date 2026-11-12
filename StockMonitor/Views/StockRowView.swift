@@ -108,6 +108,7 @@ struct StockRowView: View {
                         systemImage: stock.isPinned ? "pin.slash" : "pin",
                     )
                 }
+                Menu("移至分组") { StockGroupActions(stock: stock) }
                 Divider()
                 Button(role: .destructive) {
                     showDeleteConfirmation = true

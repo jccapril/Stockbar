@@ -2,30 +2,40 @@
 import Foundation
 
 extension AppState {
-    /// 分组数据：(market, stocks, customTitle?)
-    func groupedStocks(searchQuery: String = "") -> [(Market, [Stock], String?)] {
+    /// 置顶、自定义分组、默认持仓及市场分组，共用显示顺序。
+    func groupedStocks(searchQuery: String = "") -> [StockListGroup] {
         let rule = config.sortRule
         let usMode = config.usPriceMode
         let doSort = sortByChange
 
-        func sorted(_ stocks: [Stock], market: Market) -> [Stock] {
+        func sorted(_ stocks: [Stock]) -> [Stock] {
             guard doSort else { return stocks }
             return stocks.sorted { a, b in
-                let va = sortValue(quote: quotes[a.id], market: market, mode: usMode)
-                let vb = sortValue(quote: quotes[b.id], market: market, mode: usMode)
+                let va = sortValue(quote: quotes[a.id], market: a.market, mode: usMode)
+                let vb = sortValue(quote: quotes[b.id], market: b.market, mode: usMode)
                 return rule == .changeDesc ? va > vb : va < vb
             }
         }
 
-        var result: [(Market, [Stock], String?)] = []
+        var result: [StockListGroup] = []
         let indexIDs = Set(AppState.marketIndices.map(\.id))
         let listStocks = stocks.filter { !indexIDs.contains($0.id) && $0.matchesListSearch(searchQuery) }
         let pinnedStocks = listStocks.filter(\.isPinned)
-        let unpinnedStocks = listStocks.filter { !$0.isPinned }
+        let unpinned = listStocks.filter { !$0.isPinned }
+        let customIDs = Set(config.customStockGroups.map(\.id))
+        let unpinnedStocks = unpinned.filter { !customIDs.contains($0.customGroupID ?? "") }
 
         // 置顶组独立于市场和持仓分组，涨跌幅排序不会把它移到下方。
         if !pinnedStocks.isEmpty {
-            result.append((.aStock, pinnedStocks, "置顶"))
+            result.append((.aStock, pinnedStocks, "置顶", nil))
+        }
+
+        for group in config.customStockGroups {
+            let members = unpinned.filter { $0.customGroupID == group.id }
+            // 无搜索时保留空分组，允许首次拖入；搜索时只显示匹配结果。
+            if searchQuery.isEmpty || !members.isEmpty {
+                result.append((.aStock, sorted(members), group.name, group.id))
+            }
         }
 
         // 持仓股单独分组
@@ -38,17 +48,17 @@ extension AppState {
                     let vb = sortValue(quote: quotes[b.id], market: b.market, mode: usMode)
                     return rule == .changeDesc ? va > vb : va < vb
                 } : holdings
-                result.append((.aStock, sortedHoldings, "持仓"))
+                result.append((.aStock, sortedHoldings, "持仓", nil))
             }
             let holdingIds = Set(holdings.map(\.id))
             for market in [Market.aStock, .hkStock, .usStock, .krStock] {
                 let s = unpinnedStocks.filter { $0.market == market && !holdingIds.contains($0.id) }
-                if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
+                if !s.isEmpty { result.append((market, sorted(s), nil, nil)) }
             }
         } else {
             for market in [Market.aStock, .hkStock, .usStock, .krStock] {
                 let s = unpinnedStocks.filter { $0.market == market }
-                if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
+                if !s.isEmpty { result.append((market, sorted(s), nil, nil)) }
             }
         }
 

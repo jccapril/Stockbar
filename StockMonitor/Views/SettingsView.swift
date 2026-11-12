@@ -193,6 +193,7 @@ struct SettingsView: View {
                         }
                     }.pickerStyle(.segmented)
                 }
+                section("自定义分组") { StockGroupsSettingsView() }
                 section("添加股票") { AddStockView() }
                 if !appState.stocks.isEmpty {
                     section("我的股票") {

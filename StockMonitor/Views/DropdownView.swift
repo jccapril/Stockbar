@@ -20,7 +20,7 @@ struct DropdownView: View {
         dragLocation.map { pinDropFrame?.contains($0) == true } ?? false
     }
 
-    private var groupedStocks: [(Market, [Stock], String?)] {
+    private var groupedStocks: [StockListGroup] {
         appState.groupedStocks(searchQuery: searchQuery)
     }
 
@@ -45,6 +45,7 @@ struct DropdownView: View {
                         })
                 }
                 ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    let targetKey = group.3.map { "group:\($0)" } ?? (group.2 == "置顶" ? "pinned" : "")
                     StockGroupView(
                         market: group.0,
                         stocks: group.1,
@@ -58,20 +59,22 @@ struct DropdownView: View {
                     )
                         .id("\(group.0.rawValue)-\(group.2 ?? "")-\(searchQuery)")
                         .background(GeometryReader { geometry in
-                            if group.2 == "置顶" {
+                            if group.2 == "置顶" || group.3 != nil {
                                 Color.clear.preference(
                                     key: StockDropFramesKey.self,
-                                    value: ["pinned": geometry.frame(in: .named("stockList"))],
+                                    value: [group.3.map { "group:\($0)" } ?? "pinned": geometry
+                                    .frame(in: .named("stockList"))],
                                 )
                             }
                         })
                         .overlay(RoundedRectangle(cornerRadius: 6)
-                            .stroke(group.2 == "置顶" && isPinDropTargeted ? Color.accentColor : .clear)
+                            .stroke(dragLocation.map { dropFrames[targetKey]?.contains($0) == true } == true ? Color
+                                .accentColor : .clear)
                             .allowsHitTesting(false))
                 }
                 // 全部股票都置顶时，也留出可以拖回普通列表的落点。
-                if groups.count == 1, groups.first?.2 == "置顶" {
-                    Label("拖到这里取消置顶", systemImage: "pin.slash")
+                if groups.contains(where: { $0.2 == "置顶" || $0.3 != nil }) {
+                    Label("拖到这里恢复默认分组", systemImage: "folder")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
@@ -114,39 +117,24 @@ struct DropdownView: View {
         }
     }
 
-    private func dropPlacement(for stock: Stock, at location: CGPoint) -> (pinned: Bool, index: Int, lineY: CGFloat?)? {
-        // 松手和提示线共用落点规则，面板外不显示提示、不执行移动。
-        guard dropFrames["list"]?.contains(location) == true else { return nil }
-        let pinned = pinDropFrame?.contains(location) == true
-        let ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
-        let isHoldingGroup = appState.config.groupHoldings && stock.holdingShares != nil
-        let candidates = ordered.filter { candidate in
-            // 置顶组可跨市场；取消置顶后遵循原有持仓和市场分组规则。
-            if pinned { return candidate.isPinned }
-            if candidate.isPinned { return false }
-            let candidateIsHolding = appState.config.groupHoldings && candidate.holdingShares != nil
-            return isHoldingGroup ? candidateIsHolding : !candidateIsHolding && candidate.market == stock.market
-        }
-        let next = candidates.first { candidate in
-            // 收起的分组没有行坐标，展开的行按上半区/下半区决定前后位置。
-            guard let frame = rowFrames[candidate.id] else { return false }
-            return location.y < frame.midY
-        }
-        if let next, let index = ordered.firstIndex(where: { $0.id == next.id }) {
-            return (pinned, index, rowFrames[next.id].map { $0.minY - 1 })
-        }
-        if let last = candidates.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
-            return (pinned, index + 1, rowFrames[last.id].map { $0.maxY + 1 })
-        }
-        // 空分组使用专用落点；只有拖动行时，在其原位置显示提示。
-        let frame = pinned ? pinDropFrame : dropFrames["unpinnedEmpty"] ?? rowFrames[stock.id]
-        return (pinned, ordered.count, frame?.midY)
+    private func dropPlacement(
+        for stock: Stock,
+        at location: CGPoint,
+    ) -> (pinned: Bool, groupID: String?, index: Int, lineY: CGFloat?)? {
+        appState.stockDropPlacement(
+            for: stock,
+            at: location,
+            groups: groupedStocks,
+            dropFrames: dropFrames,
+            rowFrames: rowFrames,
+        )
     }
 
     private func moveStock(_ stock: Stock, at location: CGPoint) {
         guard let placement = dropPlacement(for: stock, at: location) else { return }
         var moved = stock
         moved.isPinned = placement.pinned
+        moved.customGroupID = placement.groupID
         var ordered = groupedStocks.flatMap(\.1).filter { $0.id != stock.id }
         ordered.insert(moved, at: placement.index)
 

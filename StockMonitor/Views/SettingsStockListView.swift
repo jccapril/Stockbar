@@ -29,23 +29,31 @@ struct SettingsStockListView: View {
                     .background(dropFrame("pinned"))
             }
             ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    let targetKey = group.3.map { "group:\($0)" } ?? (group.2 == "置顶" ? "pinned" : "")
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.2 ?? group.0.rawValue)
                         .font(.subheadline.bold())
                         .foregroundStyle(.secondary)
                     ForEach(group.1) { stock in draggableRow(stock) }
+                    if group.1.isEmpty {
+                        Text("拖动股票到此分组")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                    }
                 }
                 .padding(.vertical, 4)
                 .background {
                     if group.2 == "置顶" { dropFrame("pinned") }
+                    if let groupID = group.3 { dropFrame("group:\(groupID)") }
                 }
                 .overlay(RoundedRectangle(cornerRadius: 6)
-                    .stroke(group.2 == "置顶" && isPinTargeted ? Color.accentColor : .clear)
+                    .stroke(dragLocation.map { dropFrames[targetKey]?.contains($0) == true } == true ? Color
+                        .accentColor : .clear)
                     .allowsHitTesting(false))
                 .zIndex(group.1.contains { $0.id == draggedStock?.id } ? 1 : 0)
             }
-            if groups.contains(where: { $0.2 == "置顶" }) {
-                Label("拖到这里取消置顶", systemImage: "pin.slash")
+            if groups.contains(where: { $0.2 == "置顶" || $0.3 != nil }) {
+                Label("拖到这里恢复默认分组", systemImage: "folder")
                     .frame(maxWidth: .infinity)
                     .padding(12)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
@@ -115,39 +123,24 @@ struct SettingsStockListView: View {
         .opacity(draggedStock?.id == stock.id ? 0.6 : 1)
     }
 
-    private func dropPlacement(for stock: Stock, at location: CGPoint) -> (pinned: Bool, index: Int, lineY: CGFloat?)? {
-        // 松手和提示线共用落点规则，面板外不显示提示、不执行移动。
-        guard dropFrames["list"]?.contains(location) == true else { return nil }
-        let pinned = dropFrames["pinned"]?.contains(location) == true
-        let ordered = appState.groupedStocks().flatMap(\.1).filter { $0.id != stock.id }
-        let isHoldingGroup = appState.config.groupHoldings && stock.holdingShares != nil
-        let candidates = ordered.filter { candidate in
-            // 置顶组可跨市场；取消置顶后遵循原有持仓和市场分组规则。
-            if pinned { return candidate.isPinned }
-            if candidate.isPinned { return false }
-            let candidateIsHolding = appState.config.groupHoldings && candidate.holdingShares != nil
-            return isHoldingGroup ? candidateIsHolding : !candidateIsHolding && candidate.market == stock.market
-        }
-        let next = candidates.first { candidate in
-            // 按目标行的上半区或下半区决定插入位置。
-            guard let frame = rowFrames[candidate.id] else { return false }
-            return location.y < frame.midY
-        }
-        if let next, let index = ordered.firstIndex(where: { $0.id == next.id }) {
-            return (pinned, index, rowFrames[next.id].map { $0.minY - 1 })
-        }
-        if let last = candidates.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
-            return (pinned, index + 1, rowFrames[last.id].map { $0.maxY + 1 })
-        }
-        // 空分组使用专用落点；只有拖动行时，在其原位置显示提示。
-        let frame = pinned ? dropFrames["pinned"] : dropFrames["unpinnedEmpty"] ?? rowFrames[stock.id]
-        return (pinned, ordered.count, frame?.midY)
+    private func dropPlacement(
+        for stock: Stock,
+        at location: CGPoint,
+    ) -> (pinned: Bool, groupID: String?, index: Int, lineY: CGFloat?)? {
+        appState.stockDropPlacement(
+            for: stock,
+            at: location,
+            groups: appState.groupedStocks(),
+            dropFrames: dropFrames,
+            rowFrames: rowFrames,
+        )
     }
 
     private func moveStock(_ stock: Stock, at location: CGPoint) {
         guard let placement = dropPlacement(for: stock, at: location) else { return }
         var moved = stock
         moved.isPinned = placement.pinned
+        moved.customGroupID = placement.groupID
         var ordered = appState.groupedStocks().flatMap(\.1).filter { $0.id != stock.id }
         ordered.insert(moved, at: placement.index)
 
@@ -191,6 +184,16 @@ struct SettingsStockListView: View {
             .foregroundStyle(appState.quotes[stock.id].map { appState.quoteColor(for: $0) } ?? .secondary)
             .frame(minWidth: 84, alignment: .trailing)
             .padding(.trailing, 8)
+            Menu {
+                StockGroupActions(stock: stock)
+            } label: {
+                Image(systemName: stock.customGroupID == nil ? "folder" : "folder.fill")
+                    .frame(width: 24, height: 24)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("移至分组")
             Button {
                 // 操作当前列表中的股票，直接持久化置顶状态。
                 if let index = appState.stocks.firstIndex(where: { $0.id == stock.id }) {

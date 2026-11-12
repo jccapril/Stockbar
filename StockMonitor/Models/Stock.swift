@@ -22,6 +22,7 @@ struct Stock: Identifiable, Equatable {
     var costPrice: Double?      // 持仓成本价（nil = 未设置）
     var holdingShares: Double?  // 持仓股数（nil = 未设置）
     var isPinned: Bool = false
+    var customGroupID: String?
 
     var yahooChartSymbol: String? {
         switch market {
@@ -65,7 +66,7 @@ struct Stock: Identifiable, Equatable {
 // MARK: - Codable（容错：未知字段用默认值，避免新版本解码老数据时整条失败）
 extension Stock: Codable {
     enum CodingKeys: String, CodingKey {
-        case id, name, market, costPrice, holdingShares, isPinned
+        case id, name, market, costPrice, holdingShares, isPinned, customGroupID
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +77,7 @@ extension Stock: Codable {
         costPrice    = try c.decodeIfPresent(Double.self, forKey: .costPrice)
         holdingShares = try c.decodeIfPresent(Double.self, forKey: .holdingShares)
         isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        customGroupID = try c.decodeIfPresent(String.self, forKey: .customGroupID)
     }
 }
 
@@ -96,3 +98,10 @@ enum IndexMarket: String, CaseIterable {
         return items.map { Stock(id: $0.0, name: $0.1, market: self == .china ? .aStock : .index) }
     }
 }
+
+struct CustomStockGroup: Identifiable, Codable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String
+}
+
+typealias StockListGroup = (Market, [Stock], String?, String?)

@@ -33,6 +33,11 @@ struct StockGroupView: View {
             .padding(.horizontal, 4)
 
             if isExpanded {
+                if stocks.isEmpty {
+                    Text("拖动股票到此分组")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }
                 ForEach(stocks) { stock in
                     StockRowView(
                         stock: stock,

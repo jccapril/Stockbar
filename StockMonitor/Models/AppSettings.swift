@@ -97,6 +97,7 @@ enum AppTheme: String, Codable, CaseIterable {
 }
 
 struct AppSettings {
+    var customStockGroups: [CustomStockGroup] = []
     var theme: AppTheme = .system
     var automaticUpdatesEnabled = true
     static let defaultAIAPIAddress = "https://api.openai.com/v1"
@@ -127,6 +128,7 @@ struct AppSettings {
 // MARK: - Codable（容错：缺失字段使用默认值）
 extension AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
+        case customStockGroups
         case theme, automaticUpdatesEnabled
         case aiAPIAddress, aiModel
         case showListSearch, showOverseasIndices
@@ -137,6 +139,7 @@ extension AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        customStockGroups = try c.decodeIfPresent([CustomStockGroup].self, forKey: .customStockGroups) ?? []
         automaticUpdatesEnabled = try c.decodeIfPresent(Bool.self, forKey: .automaticUpdatesEnabled) ?? true
         theme = try c.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
         aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? Self.defaultAIAPIAddress
