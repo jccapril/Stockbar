@@ -16,8 +16,8 @@ final class RefreshScheduler {
         pendingTask = Task { await onRefresh() }
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                // 以实际执行时刻判断，午休和收盘后不再发起自动刷新。
-                guard let self, Self.isTradingHour() else { return }
+                // 休市后保留两分钟收尾窗口，获取接口延迟返回的最后一笔行情。
+                guard let self, Self.shouldAutoRefresh() else { return }
                 pendingTask = Task { await self.onRefresh() }
             }
         }
@@ -43,7 +43,12 @@ final class RefreshScheduler {
         return c
     }()
 
-    /// 仅 A 股常规交易时段允许自动刷新；午休、收盘后及周末停止轮询。
+    /// 交易期间刷新，午休和收盘后再延续两分钟；随后停止自动请求。
+    nonisolated static func shouldAutoRefresh(at date: Date = Date()) -> Bool {
+        isTradingHour(at: date) || isTradingHour(at: date.addingTimeInterval(-120))
+    }
+
+    /// A 股常规交易时段，不包含休市后的收尾刷新窗口。
     /// 注：不维护节假日日历，节假日由接口返回不变的数据来体现
     nonisolated static func isTradingHour(at date: Date = Date()) -> Bool {
         let cal = shanghaiCalendar

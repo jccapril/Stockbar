@@ -3,15 +3,34 @@ import XCTest
 
 final class RefreshSchedulerTests: XCTestCase {
 
-    private func makeDate(weekday: Int, hour: Int, minute: Int = 0) -> Date {
+    private func makeDate(weekday: Int, hour: Int, minute: Int = 0, second: Int = 0) -> Date {
         var cal = Calendar.current
         cal.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         var c = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
         c.weekday = weekday
         c.hour    = hour
         c.minute  = minute
-        c.second  = 0
+        c.second  = second
         return cal.date(from: c) ?? Date()
+    }
+
+    func test_autoRefresh_includesTwoMinuteClosingWindow() {
+        for weekday in [2, 6, 7, 1] {
+            for (hour, minute) in [(11, 30), (15, 0)] {
+                let close = makeDate(weekday: weekday, hour: hour, minute: minute)
+                for offset in [-1.0, 0, 1, 30, 60, 119, 120, 180, 1800] {
+                    XCTAssertEqual(
+                        RefreshScheduler.shouldAutoRefresh(at: close.addingTimeInterval(offset)),
+                        (weekday == 2 || weekday == 6) && offset < 120,
+                        "weekday=\(weekday), close=\(hour):\(minute), offset=\(offset)",
+                    )
+                }
+            }
+        }
+        XCTAssertFalse(RefreshScheduler.shouldAutoRefresh(at: makeDate(weekday: 2, hour: 9, minute: 29, second: 59)))
+        XCTAssertTrue(RefreshScheduler.shouldAutoRefresh(at: makeDate(weekday: 2, hour: 9, minute: 30)))
+        XCTAssertFalse(RefreshScheduler.shouldAutoRefresh(at: makeDate(weekday: 2, hour: 12, minute: 59, second: 59)))
+        XCTAssertTrue(RefreshScheduler.shouldAutoRefresh(at: makeDate(weekday: 2, hour: 13)))
     }
 
     // A股上午开盘
