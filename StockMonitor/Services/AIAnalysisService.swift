@@ -4,7 +4,7 @@ import Security
 
 /// 只接收显式挑选的公开行情字段，持仓数据不进入请求。
 enum AIAnalysisService {
-    struct Analysis {
+    struct Analysis: Codable {
         let text: String
         let lastTradingDay: String
         let generatedAt: Date

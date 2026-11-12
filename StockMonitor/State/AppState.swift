@@ -53,6 +53,7 @@ final class AppState: ObservableObject {
     @Published var selectedAIStock: Stock?
     @Published var selectedAlertStock: Stock?
     @Published var holdingEditorStock: Stock?
+    let aiReports: AIReportStore
     let priceAlerts: PriceAlertStore
     @Published var rotatingStockId: String?
     var isStatusPanelOpen = false
@@ -178,6 +179,7 @@ final class AppState: ObservableObject {
     private var scheduler: RefreshScheduler?
 
     init() {
+        aiReports = AIReportStore(directory: Self.appSupportDir)
         priceAlerts = PriceAlertStore(directory: Self.appSupportDir)
         appLogger.info("AppState init start")
         logToFile("AppState init start")

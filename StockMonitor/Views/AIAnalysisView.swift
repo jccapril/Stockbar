@@ -9,6 +9,7 @@ struct AIAnalysisView: View {
     @State private var analysis: AIAnalysisService.Analysis?
     @State private var requestTask: Task<Void, Never>?
     @State private var errorMessage = ""
+    @State private var reportSaved = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,6 +19,7 @@ struct AIAnalysisView: View {
                     Text(stock.id).foregroundColor(.secondary)
                 }
                 Spacer()
+                Button("历史报告") { openWindow(id: "ai-history") }
                 Button("AI 设置") { openWindow(id: "ai-settings") }
             }
             Picker("分析周期", selection: $horizon) {
@@ -54,13 +56,10 @@ struct AIAnalysisView: View {
                         Text(errorMessage).foregroundColor(.red)
                     }
                     if let analysis {
-                        Text("\(analysis.horizon) · 日 K 截至 \(analysis.lastTradingDay)")
-                            .font(.caption).foregroundColor(.secondary)
-                        Text(
-                            "生成于 \(analysis.generatedAt.formatted(date: .abbreviated, time: .shortened)) · \(analysis.model)",
-                        )
-                            .font(.caption).foregroundColor(.secondary)
-                        Text(analysis.text).lineSpacing(6).textSelection(.enabled)
+                        AIReportContentView(analysis: analysis)
+                        if reportSaved {
+                            Text("已保存至历史报告").font(.caption).foregroundStyle(.secondary)
+                        }
                     } else if requestTask == nil, errorMessage.isEmpty {
                         Text("选择周期后点击“开始分析”，查看技术面信号、判断依据和触发条件。")
                             .foregroundColor(.secondary)
@@ -77,6 +76,7 @@ struct AIAnalysisView: View {
     private func startAnalysis() {
         errorMessage = ""
         analysis = nil
+        reportSaved = false
         let address = appState.config.aiAPIAddress
         let model = appState.config.aiModel
         let quote = appState.quotes[stock.id]
@@ -93,6 +93,12 @@ struct AIAnalysisView: View {
                 )
                 try Task.checkCancellation()
                 analysis = result
+                do {
+                    try appState.aiReports.save(result, for: stock)
+                    reportSaved = true
+                } catch {
+                    errorMessage = "报告已生成，但保存失败：\(error.localizedDescription)"
+                }
             } catch {
                 // 主动取消或关闭窗口时不显示网络失败。
                 if !Task.isCancelled {

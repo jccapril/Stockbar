@@ -90,6 +90,14 @@ struct StockbarApp: App {
         .defaultSize(width: 620, height: 640)
         .windowResizability(.contentMinSize)
 
+        Window("AI 历史报告", id: "ai-history") {
+            AIReportHistoryView()
+                .environmentObject(appState.aiReports)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
+        }
+        .defaultSize(width: 920, height: 640)
+        .windowResizability(.contentMinSize)
+
         Window("AI 设置", id: "ai-settings") {
             AISettingsView().environmentObject(appState)
                 .preferredColorScheme(appState.config.theme.preferredColorScheme)

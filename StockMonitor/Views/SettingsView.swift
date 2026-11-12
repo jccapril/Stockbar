@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var updater = UpdateChecker.shared
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var editingStock: Stock?
@@ -202,6 +203,14 @@ struct SettingsView: View {
                 }
             }
         case .ai:
+            section("分析报告") {
+                Button("查看历史报告") {
+                    openWindow(id: "ai-history")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                Text("分析成功后自动保存在本机，按生成时间从新到旧排列。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             section("AI 服务") { AISettingsView(isEmbedded: true) }
         case .about:
             section("更新") {
