@@ -98,7 +98,7 @@ enum AppTheme: String, Codable, CaseIterable {
 
 struct AppSettings {
     var theme: AppTheme = .system
-    var automaticUpdatesEnabled = false
+    var automaticUpdatesEnabled = true
     static let defaultAIAPIAddress = "https://api.openai.com/v1"
     static let defaultAIModel = "gpt-5.4-mini"
 
@@ -137,7 +137,7 @@ extension AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        automaticUpdatesEnabled = try c.decodeIfPresent(Bool.self, forKey: .automaticUpdatesEnabled) ?? false
+        automaticUpdatesEnabled = try c.decodeIfPresent(Bool.self, forKey: .automaticUpdatesEnabled) ?? true
         theme = try c.decodeIfPresent(AppTheme.self, forKey: .theme) ?? .system
         aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? Self.defaultAIAPIAddress
         aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? Self.defaultAIModel

@@ -176,6 +176,21 @@ struct SettingsStockListView: View {
                 }
             }
             Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                if let quote = appState.quotes[stock.id] {
+                    Text(quote.formattedPrice)
+                        .font(.system(size: 12, weight: .medium))
+                    Text(quote.formattedPercent)
+                        .font(.caption)
+                } else {
+                    Text("--")
+                    Text("--").font(.caption)
+                }
+            }
+            .monospacedDigit()
+            .foregroundStyle(appState.quotes[stock.id].map { appState.quoteColor(for: $0) } ?? .secondary)
+            .frame(minWidth: 84, alignment: .trailing)
+            .padding(.trailing, 8)
             Button {
                 // 操作当前列表中的股票，直接持久化置顶状态。
                 if let index = appState.stocks.firstIndex(where: { $0.id == stock.id }) {
