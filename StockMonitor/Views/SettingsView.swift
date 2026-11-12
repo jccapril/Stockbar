@@ -91,6 +91,19 @@ struct SettingsView: View {
                     }
             }
         case .statusBar:
+            section("实时预览") {
+                MenuBarLabel()
+                    .fixedSize()
+                    .padding(.horizontal, 14)
+                    .frame(height: 32)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                Text("与当前状态栏同步，使用实际行情和持仓数据；开启轮播后会按设定间隔切换。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             section("状态栏显示") {
                 Picker("", selection: Binding(
                     get: { appState.statusBarStockId },
@@ -183,12 +196,7 @@ struct SettingsView: View {
                 section("添加股票") { AddStockView() }
                 if !appState.stocks.isEmpty {
                     section("我的股票") {
-                        ForEach(Array(appState.groupedStocks().enumerated()), id: \.offset) { _, group in
-                            Text(group.2 ?? group.0.rawValue)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.secondary)
-                            ForEach(group.1) { stock in stockRow(stock) }
-                        }
+                        SettingsStockListView { editingStock = $0 }
                     }
                 }
             }
@@ -274,34 +282,6 @@ struct SettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 6)
                 .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1.5))
         }.buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private func stockRow(_ stock: Stock) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(stock.name).font(.system(size: 12))
-                if let c = stock.costPrice,
-                   let sh = stock.holdingShares {
-                    Text("成本 \(String(format: "%.3f", c)) × \(String(format: "%.0f", sh)) 股")
-                        .font(.caption).foregroundColor(.secondary)
-                } else {
-                    Text("未设置持仓").font(.caption).foregroundColor(.secondary)
-                }
-            }
-            Spacer()
-            Button {
-                editingStock = stock
-            } label: { Image(systemName: "pencil").font(.system(size: 11)) }
-            .buttonStyle(.plain)
-
-            Button {
-                appState.stocks.removeAll { $0.id == stock.id }
-                if appState.statusBarStockId == stock.id { appState.statusBarStockId = "" }
-            } label: { Image(systemName: "xmark").font(.system(size: 11)).foregroundColor(.red) }
-            .buttonStyle(.plain)
-        }
-        .padding(.vertical, 2)
     }
 
     private func inlineEditView(_ stock: Stock) -> some View {

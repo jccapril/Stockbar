@@ -29,14 +29,13 @@ struct MenuBarLabel: View {
                 // 合为一个标题，确保组合模式的两项行情都能显示。
                 Text(appState.isStatusBarRotating ? "\(appState.statusBarStock?.name ?? "") \(title)" : title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(appState.quoteColor(for: quote))
             } else if appState.isStatusBarRotating, let stock = appState.statusBarStock {
                 Text("\(stock.name) --")
                     .font(.system(size: 12))
             }
 
             if appState.hasError {
-                Text("⚠").font(.system(size: 11)).foregroundColor(.yellow)
+                Text("⚠").font(.system(size: 11))
             }
         }
     }
@@ -44,7 +43,7 @@ struct MenuBarLabel: View {
     /// 拼成一个 Text 显示，避免 @ViewBuilder 多分支问题
     private var pnlText: Text {
         guard appState.hasPnLData else {
-            return Text("--").font(.system(size: 11)).foregroundColor(.secondary)
+            return Text("--").font(.system(size: 11))
         }
         let sym = appState.displayCurrency.symbol
         var parts: [Text] = []
@@ -52,12 +51,12 @@ struct MenuBarLabel: View {
         if mode == "__daily_pnl__" || mode == "__both_pnl__" {
             let d = appState.totalDailyPnL
             let s = "日\(d >= 0 ? "+" : "")\(sym)\(String(format: "%.0f", d))"
-            parts.append(Text(s).foregroundColor(appState.pnlColor(d)))
+            parts.append(Text(s))
         }
         if mode == "__total_pnl__" || mode == "__both_pnl__" {
             let p = appState.totalPnL
             let s = "浮\(p >= 0 ? "+" : "")\(sym)\(String(format: "%.0f", p))"
-            parts.append(Text(s).foregroundColor(appState.pnlColor(p)))
+            parts.append(Text(s))
         }
 
         let combined = parts.enumerated().reduce(Text("")) { result, item in
