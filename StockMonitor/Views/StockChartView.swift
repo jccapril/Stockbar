@@ -119,6 +119,14 @@ struct StockChartView: View {
 
             Spacer()
 
+            Button("AI 分析") {
+                appState.selectedAIStock = stock
+                openWindow(id: "ai-analysis")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .buttonStyle(.plain)
+            .help("分析当前股票的技术面买卖信号")
+
             Button {
                 appState.selectedAlertStock = stock
                 openWindow(id: "price-alerts")

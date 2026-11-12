@@ -45,6 +45,7 @@ final class AppState: ObservableObject {
 
     @Published var expandedChartStock: Stock?
     @Published var expandedChartPeriod: ChartPeriod = .intraday
+    @Published var selectedAIStock: Stock?
     @Published var selectedAlertStock: Stock?
     @Published var holdingEditorStock: Stock?
     let priceAlerts: PriceAlertStore

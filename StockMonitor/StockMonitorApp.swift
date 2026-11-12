@@ -69,6 +69,21 @@ struct StockbarApp: App {
         .defaultSize(width: 900, height: 540)
         .windowResizability(.contentMinSize)
 
+        Window("AI 分析", id: "ai-analysis") {
+            if let stock = appState.selectedAIStock {
+                AIAnalysisView(stock: stock)
+                    .id(stock.id)
+                    .environmentObject(appState)
+            }
+        }
+        .defaultSize(width: 620, height: 640)
+        .windowResizability(.contentMinSize)
+
+        Window("AI 设置", id: "ai-settings") {
+            AISettingsView().environmentObject(appState)
+        }
+        .windowResizability(.contentSize)
+
         Window("价格提醒", id: "price-alerts") {
             if let stock = appState.selectedAlertStock {
                 PriceAlertView(stock: stock)

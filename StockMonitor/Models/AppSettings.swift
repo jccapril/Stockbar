@@ -76,6 +76,8 @@ enum StatusBarQuoteDisplay: String, Codable, CaseIterable {
 }
 
 struct AppSettings {
+    var aiAPIAddress = ""
+    var aiModel = ""
     var statusBarStockId: String         = ""
     var statusBarQuoteDisplay: StatusBarQuoteDisplay = .price
     var statusBarRotationEnabled = false
@@ -99,6 +101,7 @@ struct AppSettings {
 // MARK: - Codable（容错：缺失字段使用默认值）
 extension AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
+        case aiAPIAddress, aiModel
         case showListSearch, showOverseasIndices
         case statusBarQuoteDisplay
         case statusBarRotationEnabled, statusBarRotationInterval
@@ -107,6 +110,8 @@ extension AppSettings: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        aiAPIAddress = try c.decodeIfPresent(String.self, forKey: .aiAPIAddress) ?? ""
+        aiModel = try c.decodeIfPresent(String.self, forKey: .aiModel) ?? ""
         showListSearch = try c.decodeIfPresent(Bool.self, forKey: .showListSearch) ?? true
         showOverseasIndices = try c.decodeIfPresent(Bool.self, forKey: .showOverseasIndices) ?? true
         statusBarRotationEnabled = try c.decodeIfPresent(Bool.self, forKey: .statusBarRotationEnabled) ?? false

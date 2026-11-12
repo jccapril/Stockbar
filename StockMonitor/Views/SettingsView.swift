@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Binding var showSettings: Bool
+    @Environment(\.openWindow) private var openWindow
 
     @ObservedObject private var updater = UpdateChecker.shared
 
@@ -151,6 +152,16 @@ struct SettingsView: View {
                             LaunchAtLogin.setEnabled(enabled)
                             launchAtLogin = LaunchAtLogin.isEnabled
                         }
+                }
+
+                section("AI 分析") {
+                    Button("配置 AI 服务…") {
+                        openWindow(id: "ai-settings")
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                    Text("自填 API 地址、模型与 Key，仅在手动分析时发送公开行情。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 // 关于 & 更新
