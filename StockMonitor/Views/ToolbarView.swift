@@ -3,7 +3,6 @@ import SwiftUI
 struct ToolbarView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.openWindow) private var openWindow
-    @Binding var showSettings: Bool
     @Binding var sortByChange: Bool
 
     var body: some View {
@@ -39,7 +38,12 @@ struct ToolbarView: View {
 
             Spacer()
 
-            Button { showSettings = true } label: {
+            Button {
+                // 先收起当前菜单栏面板，再打开设置，避免两个界面同时停留。
+                NSApp.keyWindow?.orderOut(nil)
+                openWindow(id: "settings")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
                 Label("设置", systemImage: "gearshape").font(.system(size: 12))
             }
             .buttonStyle(.plain)

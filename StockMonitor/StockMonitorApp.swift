@@ -52,6 +52,14 @@ struct StockbarApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window("Stockbar 设置", id: "settings") {
+            SettingsView()
+                .environmentObject(appState)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
+        }
+        .defaultSize(width: 820, height: 640)
+        .windowResizability(.contentMinSize)
+
         Window("行情走势", id: "expanded-chart") {
             if let stock = appState.expandedChartStock {
                 StockChartView(

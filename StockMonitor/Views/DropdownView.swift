@@ -2,8 +2,6 @@ import SwiftUI
 
 struct DropdownView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showSettings = false
-    @State private var sortByChange = false
     @State private var searchText = ""
 
     private var searchQuery: String {
@@ -22,57 +20,8 @@ struct DropdownView: View {
         dragLocation.map { pinDropFrame?.contains($0) == true } ?? false
     }
 
-    /// 分组数据：(market, stocks, customTitle?)
     private var groupedStocks: [(Market, [Stock], String?)] {
-        let rule = appState.config.sortRule
-        let usMode = appState.config.usPriceMode
-        let doSort = sortByChange
-
-        func sorted(_ stocks: [Stock], market: Market) -> [Stock] {
-            guard doSort else { return stocks }
-            return stocks.sorted { a, b in
-                let va = sortValue(quote: appState.quotes[a.id], market: market, mode: usMode)
-                let vb = sortValue(quote: appState.quotes[b.id], market: market, mode: usMode)
-                return rule == .changeDesc ? va > vb : va < vb
-            }
-        }
-
-        var result: [(Market, [Stock], String?)] = []
-        let indexIDs = Set(AppState.marketIndices.map(\.id))
-        let listStocks = appState.stocks.filter { !indexIDs.contains($0.id) && $0.matchesListSearch(searchQuery) }
-        let pinnedStocks = listStocks.filter(\.isPinned)
-        let unpinnedStocks = listStocks.filter { !$0.isPinned }
-
-        // 置顶组独立于市场和持仓分组，涨跌幅排序不会把它移到下方。
-        if !pinnedStocks.isEmpty {
-            result.append((.aStock, pinnedStocks, "置顶"))
-        }
-
-        // 持仓股单独分组
-        if appState.config.groupHoldings {
-            let holdings = unpinnedStocks.filter { $0.holdingShares != nil }
-            if !holdings.isEmpty {
-                // 持仓组内按第一只股票的市场类型排序（混合市场）
-                let sortedHoldings = doSort ? holdings.sorted { a, b in
-                    let va = sortValue(quote: appState.quotes[a.id], market: a.market, mode: usMode)
-                    let vb = sortValue(quote: appState.quotes[b.id], market: b.market, mode: usMode)
-                    return rule == .changeDesc ? va > vb : va < vb
-                } : holdings
-                result.append((.aStock, sortedHoldings, "持仓"))
-            }
-            let holdingIds = Set(holdings.map(\.id))
-            for market in [Market.aStock, .hkStock, .usStock, .krStock] {
-                let s = unpinnedStocks.filter { $0.market == market && !holdingIds.contains($0.id) }
-                if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
-            }
-        } else {
-            for market in [Market.aStock, .hkStock, .usStock, .krStock] {
-                let s = unpinnedStocks.filter { $0.market == market }
-                if !s.isEmpty { result.append((market, sorted(s, market: market), nil)) }
-            }
-        }
-
-        return result
+        appState.groupedStocks(searchQuery: searchQuery)
     }
 
     private var stockListView: some View {
@@ -209,16 +158,7 @@ struct DropdownView: View {
             updated[position] = item
         }
         appState.stocks = updated
-        sortByChange = false
-    }
-
-    private func sortValue(quote: Quote?, market: Market, mode: USPriceMode) -> Double {
-        guard let q = quote else { return -Double.infinity }
-        if market == .usStock, mode == .sessionPrice, let ext = q.extendedPrice {
-            // 用时段价格算涨跌幅：(盘外价 - 正盘价) / 正盘价
-            return q.price > 0 ? (ext - q.price) / q.price * 100 : q.changePercent
-        }
-        return q.changePercent
+        appState.sortByChange = false
     }
 
     private var marketIndexCards: some View {
@@ -278,48 +218,44 @@ struct DropdownView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if showSettings {
-                SettingsView(showSettings: $showSettings)
-            } else {
-                ProfitSummaryView()
+            ProfitSummaryView()
 
-                marketIndexCards
+            marketIndexCards
 
-                if selectedStock == nil, appState.config.showListSearch {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("搜索列表：名称或代码", text: $searchText)
-                            .textFieldStyle(.plain)
-                        if !searchText.isEmpty {
-                            Button { searchText = "" } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("清空搜索")
+            if selectedStock == nil, appState.config.showListSearch {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索列表：名称或代码", text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }
+                        .buttonStyle(.plain)
+                        .help("清空搜索")
                     }
-                    .padding(6)
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
-                    .padding(.horizontal, 6)
                 }
-
-                if let stock = selectedStock {
-                    StockChartView(stock: stock, onClose: { selectedStock = nil })
-                        // 切换指数时重建图表状态，并重新请求对应的分时数据。
-                        .id(stock.id)
-                } else if groupedStocks.isEmpty {
-                    Text(searchQuery.isEmpty ? "暂无股票，点击下方“新增”添加" : "没有匹配的股票")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                } else {
-                    stockListView
-                }
-
-                Divider()
-                ToolbarView(showSettings: $showSettings, sortByChange: $sortByChange)
+                .padding(6)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal, 6)
             }
+
+            if let stock = selectedStock {
+                StockChartView(stock: stock, onClose: { selectedStock = nil })
+                    // 切换指数时重建图表状态，并重新请求对应的分时数据。
+                    .id(stock.id)
+            } else if groupedStocks.isEmpty {
+                Text(searchQuery.isEmpty ? "暂无股票，点击下方“新增”添加" : "没有匹配的股票")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else {
+                stockListView
+            }
+
+            Divider()
+            ToolbarView(sortByChange: $appState.sortByChange)
         }
         .padding(6)
         .frame(width: 320)
@@ -330,7 +266,6 @@ struct DropdownView: View {
             appState.isStatusPanelOpen = focused
             // 每次打开快照一次，随后保留用户的返回列表、切换股票等操作。
             if focused, !wasOpen, appState.isStatusBarRotating {
-                showSettings = false
                 selectedStock = appState.statusBarStock
             }
         })

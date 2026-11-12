@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct AISettingsView: View {
+    var isEmbedded = false
     @EnvironmentObject var appState: AppState
     @State private var address = ""
     @State private var model = ""
@@ -13,7 +14,7 @@ struct AISettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("AI 服务设置").font(.title2.bold())
+            if !isEmbedded { Text("AI 服务设置").font(.title2.bold()) }
             TextField("API 地址，例如 https://服务域名/v1", text: Binding(
                 get: { address },
                 set: { value in
@@ -50,8 +51,8 @@ struct AISettingsView: View {
         }
         .disabled(operation != nil)
         .textFieldStyle(.roundedBorder)
-        .padding(24)
-        .frame(width: 530)
+        .padding(isEmbedded ? 0 : 24)
+        .frame(width: isEmbedded ? nil : 530)
         .onAppear {
             address = appState.config.aiAPIAddress
             model = appState.config.aiModel

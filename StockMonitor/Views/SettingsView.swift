@@ -3,146 +3,173 @@ import SwiftUI
 @MainActor
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
-    @Binding var showSettings: Bool
-    @Environment(\.openWindow) private var openWindow
-
     @ObservedObject private var updater = UpdateChecker.shared
-
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var editingStock: Stock?
+    @State private var selection: Category? = .general
+
+    private enum Category: String, CaseIterable, Identifiable {
+        case general = "通用"
+        case statusBar = "状态栏"
+        case list = "列表与排序"
+        case stocks = "股票与持仓"
+        case ai = "AI 分析"
+        case about = "关于与更新"
+        var id: Self { self }
+        var icon: String {
+            switch self {
+            case .general: "gearshape"
+            case .statusBar: "menubar.rectangle"
+            case .list: "list.bullet"
+            case .stocks: "chart.pie"
+            case .ai: "sparkles"
+            case .about: "info.circle"
+            }
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if let s = editingStock {
-                    inlineEditView(s)
-                } else {
-                // 标题栏
-                HStack {
-                    Button { showSettings = false } label: {
-                        Image(systemName: "chevron.left")
-                    }.buttonStyle(.plain)
-                    Text("设置").font(.headline)
+        HStack(spacing: 0) {
+            List(Category.allCases, selection: $selection) { category in
+                Label(category.rawValue, systemImage: category.icon)
+                    .padding(.vertical, 6)
+                    .tag(category)
+            }
+            .listStyle(.sidebar)
+            .frame(width: 180)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text((selection ?? .general).rawValue)
+                        .font(.title2.bold())
+                    categoryContent
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .frame(minWidth: 780, minHeight: 580)
+        .onChange(of: selection) { _ in editingStock = nil }
+    }
 
-                Divider()
-
-                section("主题") {
-                    Picker("", selection: $appState.config.theme) {
-                        ForEach(AppTheme.allCases, id: \.self) { theme in
-                            Text(theme.displayName).tag(theme)
+    @ViewBuilder
+    private var categoryContent: some View {
+        switch selection ?? .general {
+        case .general:
+            section("主题") {
+                Picker("", selection: $appState.config.theme) {
+                    ForEach(AppTheme.allCases, id: \.self) { theme in
+                        Text(theme.displayName).tag(theme)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            section("涨跌颜色") {
+                HStack(spacing: 8) {
+                    ForEach(ColorTheme.allCases, id: \.rawValue) { scheme in
+                        colorCard(scheme)
+                    }
+                }
+            }
+            section("刷新间隔") {
+                Picker("", selection: Binding(
+                    get: { appState.refreshInterval },
+                    set: { appState.refreshInterval = $0; appState.restartScheduler() },
+                )) {
+                    ForEach(AppSettings.validRefreshIntervals, id: \.self) { i in
+                        Text("\(i) 秒").tag(i)
+                    }
+                }.pickerStyle(.segmented)
+            }
+            section("开机启动") {
+                Toggle("登录后自动启动", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { enabled in
+                        LaunchAtLogin.setEnabled(enabled)
+                        launchAtLogin = LaunchAtLogin.isEnabled
+                    }
+            }
+        case .statusBar:
+            section("状态栏显示") {
+                Picker("", selection: Binding(
+                    get: { appState.statusBarStockId },
+                    set: { appState.statusBarStockId = $0 },
+                )) {
+                    Text("不显示").tag("__none__")
+                    Text("日盈亏").tag("__daily_pnl__")
+                    Text("总盈亏").tag("__total_pnl__")
+                    Text("日盈亏 + 总盈亏").tag("__both_pnl__")
+                    Divider()
+                    Text("（自动选第一只）").tag("")
+                    ForEach(appState.stocks) { s in
+                        Text("\(s.name)  \(s.id)").tag(s.id)
+                    }
+                }.pickerStyle(.menu)
+                .disabled(appState.config.statusBarRotationEnabled)
+                Toggle("轮播置顶股票", isOn: $appState.config.statusBarRotationEnabled)
+                if appState.config.statusBarRotationEnabled {
+                    Picker("轮播间隔", selection: $appState.config.statusBarRotationInterval) {
+                        ForEach(AppSettings.validRotationIntervals, id: \.self) { seconds in
+                            Text("\(seconds) 秒").tag(seconds)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
+                    Text(appState.rotationStocks.isEmpty
+                         ? "请先在列表中置顶股票。暂无置顶时沿用原显示方式。"
+                         : "按置顶顺序轮播；点击查看当前股票走势，面板打开时暂停轮播。")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-
-                // 状态栏显示
-                section("状态栏显示") {
+            }
+            if appState.config.statusBarRotationEnabled || !appState.statusBarStockId.hasPrefix("__") {
+                section("状态栏行情格式") {
                     Picker("", selection: Binding(
-                        get: { appState.statusBarStockId },
-                        set: { appState.statusBarStockId = $0 },
+                        get: { appState.config.statusBarQuoteDisplay },
+                        set: { appState.config.statusBarQuoteDisplay = $0 },
                     )) {
-                        Text("不显示").tag("__none__")
-                        Text("日盈亏").tag("__daily_pnl__")
-                        Text("总盈亏").tag("__total_pnl__")
-                        Text("日盈亏 + 总盈亏").tag("__both_pnl__")
-                        Divider()
-                        Text("（自动选第一只）").tag("")
-                        ForEach(appState.stocks) { s in
-                            Text("\(s.name)  \(s.id)").tag(s.id)
+                        ForEach(StatusBarQuoteDisplay.allCases, id: \.rawValue) { format in
+                            Text(format.displayName).tag(format)
                         }
                     }.pickerStyle(.menu)
-                    .disabled(appState.config.statusBarRotationEnabled)
-                    Toggle("轮播置顶股票", isOn: $appState.config.statusBarRotationEnabled)
-                    if appState.config.statusBarRotationEnabled {
-                        Picker("轮播间隔", selection: $appState.config.statusBarRotationInterval) {
-                            ForEach(AppSettings.validRotationIntervals, id: \.self) { seconds in
-                                Text("\(seconds) 秒").tag(seconds)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Text(appState.rotationStocks.isEmpty
-                             ? "请先在列表中置顶股票。暂无置顶时沿用原显示方式。"
-                             : "按置顶顺序轮播；点击查看当前股票走势，面板打开时暂停轮播。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                }
+            }
+        case .list:
+            section("列表显示") {
+                Toggle("显示列表搜索", isOn: $appState.config.showListSearch)
+                Toggle("显示海外指数市场", isOn: $appState.config.showOverseasIndices)
+            }
+            section("持仓股展示") {
+                Toggle("持仓股单独分组置顶", isOn: Binding(
+                    get: { appState.config.groupHoldings },
+                    set: { appState.config.groupHoldings = $0 },
+                ))
+                .padding(.leading, 8)
+            }
+            section("排序规则") {
+                Picker("", selection: Binding(
+                    get: { appState.config.sortRule },
+                    set: { appState.config.sortRule = $0 },
+                )) {
+                    ForEach(SortRule.allCases, id: \.rawValue) { rule in
+                        Text(rule.displayName).tag(rule)
                     }
-                }
-
-                // 行情格式只适用于股票，盈亏和不显示模式没有此选项。
-                if appState.config.statusBarRotationEnabled || !appState.statusBarStockId.hasPrefix("__") {
-                    section("状态栏行情格式") {
-                        Picker("", selection: Binding(
-                            get: { appState.config.statusBarQuoteDisplay },
-                            set: { appState.config.statusBarQuoteDisplay = $0 },
-                        )) {
-                            ForEach(StatusBarQuoteDisplay.allCases, id: \.rawValue) { format in
-                                Text(format.displayName).tag(format)
-                            }
-                        }.pickerStyle(.menu)
+                }.pickerStyle(.segmented)
+            }
+            section("美股排序价格") {
+                Picker("", selection: Binding(
+                    get: { appState.config.usPriceMode },
+                    set: { appState.config.usPriceMode = $0 },
+                )) {
+                    ForEach(USPriceMode.allCases, id: \.rawValue) { mode in
+                        Text(mode.displayName).tag(mode)
                     }
-                }
-
-                section("列表显示") {
-                    Toggle("显示列表搜索", isOn: $appState.config.showListSearch)
-                    Toggle("显示海外指数市场", isOn: $appState.config.showOverseasIndices)
-                }
-
-                // 持仓股分组
-                section("持仓股展示") {
-                    Toggle("持仓股单独分组置顶", isOn: Binding(
-                        get: { appState.config.groupHoldings },
-                        set: { appState.config.groupHoldings = $0 },
-                    ))
-                    .padding(.leading, 8)
-                }
-
-                // 排序规则
-                section("排序规则") {
-                    Picker("", selection: Binding(
-                        get: { appState.config.sortRule },
-                        set: { appState.config.sortRule = $0 },
-                    )) {
-                        ForEach(SortRule.allCases, id: \.rawValue) { rule in
-                            Text(rule.displayName).tag(rule)
-                        }
-                    }.pickerStyle(.segmented)
-                }
-
-                // 美股排序价格
-                section("美股排序价格") {
-                    Picker("", selection: Binding(
-                        get: { appState.config.usPriceMode },
-                        set: { appState.config.usPriceMode = $0 },
-                    )) {
-                        ForEach(USPriceMode.allCases, id: \.rawValue) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
-                    }.pickerStyle(.segmented)
-                }
-
-                // 刷新间隔
-                section("刷新间隔") {
-                    Picker("", selection: Binding(
-                        get: { appState.refreshInterval },
-                        set: { appState.refreshInterval = $0; appState.restartScheduler() },
-                    )) {
-                        ForEach(AppSettings.validRefreshIntervals, id: \.self) { i in
-                            Text("\(i) 秒").tag(i)
-                        }
-                    }.pickerStyle(.segmented)
-                }
-
-                // 涨跌颜色
-                section("涨跌颜色") {
-                    HStack(spacing: 8) {
-                        ForEach(ColorTheme.allCases, id: \.rawValue) { scheme in
-                            colorCard(scheme)
-                        }
-                    }
-                }
-
-                // 持仓汇总货币
+                }.pickerStyle(.segmented)
+            }
+        case .stocks:
+            if let stock = editingStock {
+                inlineEditView(stock)
+            } else {
                 section("持仓汇总货币") {
                     Picker("", selection: Binding(
                         get: { appState.displayCurrency },
@@ -153,112 +180,78 @@ struct SettingsView: View {
                         }
                     }.pickerStyle(.segmented)
                 }
-
-                // 开机启动
-                section("开机启动") {
-                    Toggle("登录后自动启动", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { enabled in
-                            LaunchAtLogin.setEnabled(enabled)
-                            launchAtLogin = LaunchAtLogin.isEnabled
+                section("添加股票") { AddStockView() }
+                if !appState.stocks.isEmpty {
+                    section("我的股票") {
+                        ForEach(Array(appState.groupedStocks().enumerated()), id: \.offset) { _, group in
+                            Text(group.2 ?? group.0.rawValue)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.secondary)
+                            ForEach(group.1) { stock in stockRow(stock) }
                         }
-                }
-
-                section("AI 分析") {
-                    Button("配置 AI 服务…") {
-                        openWindow(id: "ai-settings")
-                        NSApp.activate(ignoringOtherApps: true)
                     }
-                    Text("自填 API 地址、模型与 Key，仅在手动分析时发送公开行情。")
+                }
+            }
+        case .ai:
+            section("AI 服务") { AISettingsView(isEmbedded: true) }
+        case .about:
+            section("更新") {
+                Toggle("自动检查更新", isOn: $appState.config.automaticUpdatesEnabled)
+                    .toggleStyle(.checkbox)
+                Text("启动时及每隔 6 小时检查新版，显示更新内容，可选择更新、取消或跳过此版本。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if Bundle.main.bundleIdentifier != "com.vgearen.Stockbar" {
+                    Text("开发版不自动检查正式版更新。")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
-                section("更新") {
-                    Toggle("自动检查更新", isOn: $appState.config.automaticUpdatesEnabled)
-                        .toggleStyle(.checkbox)
-                    Text("启动时及每隔 6 小时检查新版，显示更新内容，可选择更新、取消或跳过此版本。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    if Bundle.main.bundleIdentifier != "com.vgearen.Stockbar" {
-                        Text("开发版不自动检查正式版更新。")
+            }
+            section("关于") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Stockbar")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                }
-
-                // 关于 & 更新
-                section("关于") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Stockbar")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        if updater.isBusy {
-                            HStack(spacing: 4) {
-                                ProgressView().scaleEffect(0.6)
-                                Text(updater.status)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if !updater.status.isEmpty {
+                    Spacer()
+                    if updater.isBusy {
+                        HStack(spacing: 4) {
+                            ProgressView().scaleEffect(0.6)
                             Text(updater.status)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                        } else {
-                            Button("检查更新") {
-                                updater.checkAndUpdate()
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
                         }
+                    } else if !updater.status.isEmpty {
+                        Text(updater.status)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Button("检查更新") {
+                            updater.checkAndUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     }
                 }
-
-                section("添加股票") { AddStockView() }
-
-                // 已有股票：设置了持仓的排在前面，未设置持仓的在后
-                if !appState.stocks.isEmpty {
-                    section("我的股票") {
-                        ForEach(sortedStocksForSettings) { s in stockRow(s) }
-                    }
-                }
-                } // end else
             }
-            .padding(8)
         }
-        .scrollIndicators(.never)
-        // 高度与列表模式（ProfitSummary + stockListView maxHeight 520 + Toolbar 等）相当，
-        // 避免切换 list↔settings 时 NSPanel 大小不一致导致下方空白。
-        .frame(width: 284, height: 620)
-    }
-
-    // MARK: - 排序辅助
-
-    /// 设置页"我的股票"排序：有持仓（成本 + 股数都设置了）的排在前面，
-    /// 其它的排在后面；组内保持原顺序。
-    private var sortedStocksForSettings: [Stock] {
-        let withHolding = appState.stocks.filter {
-            $0.costPrice != nil
-                && $0.holdingShares != nil
-        }
-        let withoutHolding = appState.stocks.filter {
-            $0.costPrice == nil
-                || $0.holdingShares == nil
-        }
-        return withHolding + withoutHolding
     }
 
     // MARK: - 子视图
 
     @ViewBuilder
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundColor(.secondary)
-            content()
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+        } label: {
+            Text(title).font(.headline)
         }
     }
 

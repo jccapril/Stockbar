@@ -46,6 +46,8 @@ final class AppState: ObservableObject {
 
     // MARK: - 实时状态
 
+    @Published var sortByChange = false
+
     @Published var expandedChartStock: Stock?
     @Published var expandedChartPeriod: ChartPeriod = .intraday
     @Published var selectedAIStock: Stock?
