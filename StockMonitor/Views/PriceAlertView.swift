@@ -10,6 +10,8 @@ struct PriceAlertView: View {
     @State private var targetText = ""
     @State private var editingID: UUID?
     @State private var isSaving = false
+    @State private var windowMinutes = 5
+    @State private var cooldownMinutes = 10
 
     private var target: Double? {
         guard let value = Double(targetText.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -25,15 +27,30 @@ struct PriceAlertView: View {
                 Picker("指标", selection: $metric) {
                     ForEach(PriceAlert.Metric.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
-                Picker("条件", selection: $comparison) {
-                    ForEach(PriceAlert.Comparison.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                if !metric.isRapid {
+                    Picker("条件", selection: $comparison) {
+                        ForEach(PriceAlert.Comparison.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
                 }
-                TextField(metric == .percent ? "例如 -3 或 5" : "目标价格", text: $targetText)
+                TextField(metric.isRapid ? "例如 2" : metric == .percent ? "例如 -3 或 5" : "目标价格", text: $targetText)
                     .textFieldStyle(.roundedBorder)
-                if metric == .percent { Text("%") }
+                if metric != .price { Text("%") }
             }
-            Text("涨跌幅按当日昨收计算，价格使用股票原币种。达到条件（含等于）即提醒一次；添加时已满足条件，也会在下次刷新提醒。")
-                .font(.caption).foregroundStyle(.secondary)
+            if metric.isRapid {
+                HStack {
+                    Picker("时间窗口", selection: $windowMinutes) {
+                        ForEach(PriceAlert.validWindows, id: \.self) { Text("\($0) 分钟").tag($0) }
+                    }
+                    Picker("提醒冷却", selection: $cooldownMinutes) {
+                        ForEach(PriceAlert.validCooldowns, id: \.self) { Text("\($0) 分钟").tag($0) }
+                    }
+                }
+                Text("按本机收到的连续行情计算窗口内价格变动，累计满时间窗口后开始判断；超过 90 秒无新行情会重新累计。触发后保持监测，冷却期间不重复提醒。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("涨跌幅按当日昨收计算，价格使用股票原币种。达到条件（含等于）即提醒一次；添加时已满足条件，也会在下次刷新提醒。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if stock.market == .usStock {
                 Text("美股按常规交易时段价格判断，不含盘前、盘后及夜盘价格。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -65,8 +82,11 @@ struct PriceAlertView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("仅在应用运行、联网并刷新行情时检查。触发后自动停用，可手动重新启用。")
+            Text("仅在应用运行并刷新行情时检查，沿用现有刷新时段。普通提醒触发后停用；快速涨跌提醒按冷却时间重复监测，重启后重新累计行情。")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+        .onChange(of: metric) { value in
+            if value.isRapid, editingID == nil { targetText = "2" }
         }
         .padding(20)
         .frame(minWidth: 540, minHeight: 380)
@@ -77,7 +97,9 @@ struct PriceAlertView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(rule.summary)
                 if let date = rule.triggeredAt {
-                    Text("已触发 · \(date.formatted(date: .abbreviated, time: .shortened))")
+                    Text(
+                        "\(rule.metric.isRapid && rule.isEnabled ? "监测中 · 上次提醒" : "已触发") · \(date.formatted(date: .abbreviated, time: .shortened))",
+                    )
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     Text(rule.isEnabled ? "监测中" : "已停用")
@@ -103,6 +125,8 @@ struct PriceAlertView: View {
                 metric = rule.metric
                 comparison = rule.comparison
                 targetText = String(rule.target)
+                windowMinutes = rule.windowMinutes
+                cooldownMinutes = rule.cooldownMinutes
             }
             Button("删除", role: .destructive) { store.remove(rule.id) }
         }
@@ -118,6 +142,8 @@ struct PriceAlertView: View {
             metric: metric,
             comparison: comparison,
             target: target,
+            windowMinutes: windowMinutes,
+            cooldownMinutes: cooldownMinutes,
         )
         if let editingID { rule.id = editingID }
         isSaving = true

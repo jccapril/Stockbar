@@ -9,6 +9,7 @@ final class PriceAlertStore: ObservableObject {
     @Published var errorMessage: String?
     private let fileURL: URL
     private var isEvaluating = false
+    private var rapidTrackers: [UUID: RapidMoveTracker] = [:]
 
     init(directory: URL) {
         fileURL = directory.appendingPathComponent("price-alerts.json")
@@ -17,7 +18,11 @@ final class PriceAlertStore: ObservableObject {
         do {
             let data = try Data(contentsOf: fileURL)
             let loaded = try JSONDecoder().decode([PriceAlert].self, from: data)
-            guard loaded.allSatisfy({ $0.target.isFinite && ($0.metric == .percent || $0.target > 0) }) else {
+            guard loaded.allSatisfy({
+                $0.target.isFinite && ($0.metric == .percent || $0.target > 0)
+                    && PriceAlert.validWindows.contains($0.windowMinutes)
+                    && PriceAlert.validCooldowns.contains($0.cooldownMinutes)
+            }) else {
                 throw CocoaError(.coderReadCorrupt)
             }
             rules = loaded
@@ -45,11 +50,13 @@ final class PriceAlertStore: ObservableObject {
         } else {
             updated.append(rule)
         }
-        return persist(updated)
+        let saved = persist(updated)
+        if saved { rapidTrackers.removeValue(forKey: rule.id) }
+        return saved
     }
 
     func remove(_ id: UUID) {
-        persist(rules.filter { $0.id != id })
+        if persist(rules.filter { $0.id != id }) { rapidTrackers.removeValue(forKey: id) }
     }
 
     func removeStocks(_ ids: Set<String>) {
@@ -83,23 +90,35 @@ final class PriceAlertStore: ObservableObject {
             errorMessage = "通知未获允许，提醒暂未发送。请在系统设置 → 通知中开启。"
             return
         }
+        rapidTrackers = rapidTrackers.filter { id, _ in rules.contains { $0.id == id && $0.isEnabled } }
         for rule in rules where rule.isEnabled {
             // 只判断本轮实际返回的行情，不使用缓存中未刷新的报价。
-            guard let quote = freshQuotes[rule.stockId], rule.matches(quote),
-                  rules.contains(rule) else { continue }
+            guard let quote = freshQuotes[rule.stockId], rules.contains(rule) else { continue }
+            var rapidChange: Double?
+            if rule.metric.isRapid {
+                var tracker = rapidTrackers[rule.id] ?? RapidMoveTracker()
+                rapidChange = tracker.observe(quote, at: Date(), rule: rule)
+                rapidTrackers[rule.id] = tracker
+                guard rapidChange != nil else { continue }
+            } else if !rule.matches(quote) {
+                continue
+            }
             let content = UNMutableNotificationContent()
-            content.title = "\(rule.stockName) · 价格提醒"
+            content.title = "\(rule.stockName) · \(rule.metric.isRapid ? rule.metric.rawValue : "价格提醒")"
             content.body = "\(rule.summary)\n现价 \(quote.formattedPrice)，涨跌幅 \(quote.formattedPercent)\n\(rule.stockId) · \(quote.updateTime)"
+            if let rapidChange {
+                content.body = "近 \(rule.windowMinutes) 分钟变动 \(String(format: "%+.2f%%", rapidChange))\n现价 \(quote.formattedPrice)\n\(rule.stockId) · \(quote.updateTime)"
+            }
             content.sound = .default
             let request = UNNotificationRequest(identifier: rule.id.uuidString, content: content, trigger: nil)
             do {
                 try await center.add(request)
-                // 通知成功提交才停用；发送期间被用户编辑或删除的规则不覆盖。
+                // 普通提醒触发后停用，快速涨跌提醒保留启用并进入冷却。
                 guard let index = rules.firstIndex(of: rule) else { continue }
                 var updated = rules
-                updated[index].isEnabled = false
+                updated[index].isEnabled = rule.metric.isRapid
                 updated[index].triggeredAt = Date()
-                // 写盘失败仍在本次运行中停用，避免每轮重复发送。
+                // 写盘失败仍在内存中保留触发时间／停用状态，避免每轮重复发送。
                 if !persist(updated) { rules = updated }
             } catch {
                 errorMessage = "发送提醒失败：\(error.localizedDescription)"
