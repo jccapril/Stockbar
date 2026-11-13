@@ -70,6 +70,19 @@ struct AIReportContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let asOf = analysis.intradayAsOf {
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text(AIAnalysisService.tSnapshotStatus(asOf: asOf, now: context.date))
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Text(
+                    "行情截至 \(asOf.formatted(Date.FormatStyle(date: .numeric, time: .standard, timeZone: TimeZone(identifier: "Asia/Shanghai")!))) · 北京时间",
+                )
+                    .font(.caption).foregroundStyle(.secondary)
+                if let summary = analysis.intradaySummary {
+                    Text(summary).font(.callout).textSelection(.enabled)
+                }
+            }
             Text("\(analysis.horizon) · 日 K 截至 \(analysis.lastTradingDay)")
                 .font(.caption).foregroundStyle(.secondary)
             Text("生成于 \(analysis.generatedAt.formatted(date: .numeric, time: .standard)) · \(analysis.model)")

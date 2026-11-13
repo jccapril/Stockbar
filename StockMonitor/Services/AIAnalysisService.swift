@@ -10,6 +10,9 @@ enum AIAnalysisService {
         let generatedAt: Date
         let model: String
         let horizon: String
+        var intradayAsOf: Date?
+        var intradayReferencePrice: Double?
+        var intradaySummary: String?
     }
 
     struct Failure: LocalizedError {
@@ -76,6 +79,9 @@ enum AIAnalysisService {
         let token = try key(for: url)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(message: "请先在 AI 设置中保存模型和 API Key。")
+        }
+        if horizon == tHorizon {
+            return try await analyzeT(stock: stock, url: url, token: token, model: model)
         }
         let candles = try await ChartService.fetchCandles(stock: stock, period: .daily)
         let activity = try await fetchActivity(stock: stock)
@@ -153,7 +159,7 @@ enum AIAnalysisService {
         }
     }
 
-    private static func send(_ request: URLRequest) async throws -> Data {
+    static func send(_ request: URLRequest) async throws -> Data {
         // API Key 只发送到用户指定的地址，拒绝重定向，避免凭据或行情被转发。
         let session = URLSession(configuration: .ephemeral, delegate: AIRedirectBlocker(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
@@ -203,7 +209,7 @@ enum AIAnalysisService {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private struct Response: Decodable {
+    struct Response: Decodable {
         struct Choice: Decodable {
             struct Message: Decodable { let content: String? }
             let message: Message

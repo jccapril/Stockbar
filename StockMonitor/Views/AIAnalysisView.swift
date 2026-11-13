@@ -23,6 +23,9 @@ struct AIAnalysisView: View {
                 Button("AI 设置") { openWindow(id: "ai-settings") }
             }
             Picker("分析周期", selection: $horizon) {
+                if stock.market == .aStock {
+                    Text("做 T").tag(AIAnalysisService.tHorizon)
+                }
                 Text("短线").tag("短线（未来 1–5 个交易日）")
                 Text("波段").tag("波段（未来 20–60 个交易日）")
             }
@@ -30,6 +33,10 @@ struct AIAnalysisView: View {
             .disabled(requestTask != nil)
             .onChange(of: horizon) { _ in analysis = nil; errorMessage = "" }
 
+            if horizon == AIAnalysisService.tHorizon {
+                Text("分钟价量分析 · 手动刷新 · 不含持仓及交易成本")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if !appState.config.aiAPIAddress.isEmpty {
                 Text("发送至：\(appState.config.aiAPIAddress)\n模型：\(appState.config.aiModel)")
                     .font(.caption).foregroundColor(.secondary).textSelection(.enabled)
