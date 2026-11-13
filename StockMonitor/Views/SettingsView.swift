@@ -101,9 +101,6 @@ struct SettingsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 1))
                     .frame(maxWidth: .infinity, minHeight: 48)
-                Text("与当前状态栏同步，使用实际行情和持仓数据；开启轮播后会按设定间隔切换。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             section("状态栏显示") {
                 Picker("", selection: Binding(
@@ -129,11 +126,6 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    Text(appState.rotationStocks.isEmpty
-                         ? "请先在列表中置顶股票。暂无置顶时沿用原显示方式。"
-                         : "按置顶顺序轮播；点击查看当前股票走势，面板打开时暂停轮播。")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
             }
             if appState.config.statusBarRotationEnabled || !appState.statusBarStockId.hasPrefix("__") {
@@ -208,17 +200,12 @@ struct SettingsView: View {
                     openWindow(id: "ai-history")
                     NSApp.activate(ignoringOtherApps: true)
                 }
-                Text("分析成功后自动保存在本机，按生成时间从新到旧排列。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             section("AI 服务") { AISettingsView(isEmbedded: true) }
         case .about:
             section("更新") {
                 Toggle("自动检查更新", isOn: $appState.config.automaticUpdatesEnabled)
                     .toggleStyle(.checkbox)
-                Text("启动时及每隔 6 小时检查新版，显示更新内容，可选择更新、取消或跳过此版本。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 if Bundle.main.bundleIdentifier != "com.vgearen.Stockbar" {
                     Text("开发版不自动检查正式版更新。")
                         .font(.caption)

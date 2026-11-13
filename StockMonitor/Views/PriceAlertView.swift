@@ -45,15 +45,6 @@ struct PriceAlertView: View {
                         ForEach(PriceAlert.validCooldowns, id: \.self) { Text("\($0) 分钟").tag($0) }
                     }
                 }
-                Text("按本机收到的连续行情计算窗口内价格变动，累计满时间窗口后开始判断；超过 90 秒无新行情会重新累计。触发后保持监测，冷却期间不重复提醒。")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text("涨跌幅按当日昨收计算，价格使用股票原币种。达到条件（含等于）即提醒一次；添加时已满足条件，也会在下次刷新提醒。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if stock.market == .usStock {
-                Text("美股按常规交易时段价格判断，不含盘前、盘后及夜盘价格。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Spacer()
@@ -82,8 +73,6 @@ struct PriceAlertView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("仅在应用运行并刷新行情时检查，沿用现有刷新时段。普通提醒触发后停用；快速涨跌提醒按冷却时间重复监测，重启后重新累计行情。")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .onChange(of: metric) { value in
             if value.isRapid, editingID == nil { targetText = "2" }

@@ -35,10 +35,6 @@ struct AISettingsView: View {
                 Button("获取模型") { perform(test: false) }
             }
             SecureField("API Key（密码模式）", text: $apiKey)
-            Text("Key 保存在本机钥匙串，保存及重新打开后以密码掩码显示。更换 API 地址后请重新填写 Key，或按回车读取该地址已保存的 Key。")
-                .font(.caption).foregroundColor(.secondary)
-            Text("测试连接会向所选模型发送一条简短测试消息，可能产生少量费用，不发送股票或持仓数据。")
-                .font(.caption).foregroundColor(.secondary)
             HStack {
                 if operation != nil { ProgressView().controlSize(.small) }
                 if !message.isEmpty {

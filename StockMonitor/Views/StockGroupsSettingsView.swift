@@ -31,8 +31,6 @@ struct StockGroupsSettingsView: View {
                     Button("删除", role: .destructive) { deleting = group }
                 }
             }
-            Text("置顶优先显示；自定义分组可包含不同市场的股票。可从股票的分组菜单或拖动移入分组。")
-                .font(.caption).foregroundStyle(.secondary)
         }
         .alert("删除分组？", isPresented: Binding(
             get: { deleting != nil }, set: { if !$0 { deleting = nil } },
