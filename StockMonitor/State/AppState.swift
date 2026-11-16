@@ -37,6 +37,9 @@ final class AppState: ObservableObject {
             saveStocks(stocks)
             let removed = Set(oldValue.map(\.id)).subtracting(stocks.map(\.id))
                 .subtracting(Self.marketIndices.map(\.id))
+            for id in removed where positionSchedules[id] != nil {
+                setPositionSchedule(nil, for: id)
+            }
             priceAlerts.removeStocks(removed)
             if oldValue.filter(\.isPinned).map(\.id) != stocks.filter(\.isPinned).map(\.id) {
                 configureStatusBarRotation()
@@ -51,6 +54,98 @@ final class AppState: ObservableObject {
     @Published var expandedChartStock: Stock?
     @Published var expandedChartPeriod: ChartPeriod = .intraday
     @Published var selectedAIStock: Stock?
+    @Published private(set) var runningTStocks: Set<String> = []
+    @Published private(set) var automaticTErrors: [String: String] = [:]
+    @Published var selectedReportMarker: TAnalysisChartMarker?
+
+    // Dev 与正式版各自保存自动调用的授权，避免两份应用同时启用同一配置。
+    private var lastTStart: [String: Date] = [:]
+
+    struct PositionSchedule: Codable {
+        var minutes: Int
+        let balance: AIAnalysisService.TPosition
+        let createdAt: Date
+    }
+
+    @Published private(set) var positionSchedules: [String: PositionSchedule] = {
+        guard let data = UserDefaults.standard.data(forKey: "positionTSchedules") else { return [:] }
+        return (try? JSONDecoder().decode([String: PositionSchedule].self, from: data)) ?? [:]
+    }()
+
+    func setPositionSchedule(_ schedule: PositionSchedule?, for stockID: String) {
+        automaticTErrors[stockID] = nil
+        positionSchedules[stockID] = schedule
+        UserDefaults.standard.set(try? JSONEncoder().encode(positionSchedules), forKey: "positionTSchedules")
+        lastTStart[stockID] = schedule == nil ? nil : Date()
+    }
+
+    func scheduledPosition(for stockID: String) -> AIAnalysisService.TPosition? {
+        guard let schedule = positionSchedules[stockID] else { return nil }
+        let report = aiReports.reports.first {
+            $0.stockID == stockID && $0.analysis.endingPosition != nil && $0.analysis.generatedAt >= schedule.createdAt
+        }
+        let balance = report?.analysis.endingPosition ?? schedule.balance
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        if calendar.isDateInToday(report?.analysis.generatedAt ?? schedule.createdAt) { return balance }
+        return .init(held: balance.held, sellable: balance.held, cash: balance.cash, opening: balance.held)
+    }
+
+    func beginTRequest(for stockID: String) -> Bool {
+        runningTStocks.insert(stockID).inserted
+    }
+
+    func finishTRequest(for stockID: String) {
+        runningTStocks.remove(stockID)
+    }
+
+    static func automaticTDue(now: Date, quoteTime: Date, lastStart: Date?, minutes: Int) -> Bool {
+        guard (1...240).contains(minutes), RefreshScheduler.isTradingHour(at: now),
+              RefreshScheduler.isTradingHour(at: quoteTime),
+              (0...180).contains(now.timeIntervalSince(quoteTime)) else { return false }
+        return lastStart.map { now.timeIntervalSince($0) >= Double(minutes) * 60 } ?? true
+    }
+
+    private func runDueTAnalyses(_ fresh: [String: Quote]) {
+        guard !positionSchedules.isEmpty else { return }
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        for stock in stocks where stock.market == .aStock {
+            guard let minutes = positionSchedules[stock.id]?.minutes, let quote = fresh[stock.id],
+                  let time = formatter.date(from: quote.updateTime),
+                  Self.automaticTDue(now: now, quoteTime: time, lastStart: lastTStart[stock.id], minutes: minutes)
+            else { continue }
+            startBackgroundT(for: stock)
+        }
+    }
+
+    private func startBackgroundT(for stock: Stock) {
+        guard let position = scheduledPosition(for: stock.id), beginTRequest(for: stock.id) else { return }
+        lastTStart[stock.id] = Date()
+        automaticTErrors[stock.id] = nil
+        Task {
+            defer { finishTRequest(for: stock.id) }
+            do {
+                let report = try await AIAnalysisService.analyze(
+                    stock: stock,
+                    quote: nil,
+                    address: config.aiAPIAddress,
+                    model: config.aiModel,
+                    horizon: AIAnalysisService.positionTHorizon,
+                    reports: aiReports.reports,
+                    position: position,
+                    fills: aiReports.fills(for: stock),
+                )
+                try aiReports.save(report, for: stock)
+            } catch {
+                automaticTErrors[stock.id] = error.localizedDescription
+            }
+        }
+    }
+
     @Published var selectedAlertStock: Stock?
     @Published var holdingEditorStock: Stock?
     let aiReports: AIReportStore
@@ -270,6 +365,7 @@ final class AppState: ObservableObject {
             lastUpdateTime = Date()
             syncStockNamesFromQuotes()
             let freshQuotes = merged.merging(h) { _, new in new }.merging(kr) { _, new in new }
+            runDueTAnalyses(freshQuotes)
             await priceAlerts.evaluate(freshQuotes)
         } catch {
             hasError = true

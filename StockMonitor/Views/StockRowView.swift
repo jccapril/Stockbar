@@ -77,8 +77,7 @@ struct StockRowView: View {
             Menu {
                 Button {
                     appState.holdingEditorStock = stock
-                    openWindow(id: "holding-editor")
-                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow.replacingSource(id: "holding-editor")
                 } label: {
                     Label("设置持仓", systemImage: "pencil")
                 }
@@ -90,8 +89,7 @@ struct StockRowView: View {
                 .disabled(!hasHoldingToClear)
                 Button {
                     appState.selectedAlertStock = stock
-                    openWindow(id: "price-alerts")
-                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow.replacingSource(id: "price-alerts")
                 } label: {
                     Label("价格提醒", systemImage: "bell")
                 }

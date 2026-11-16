@@ -197,8 +197,7 @@ struct SettingsView: View {
         case .ai:
             section("分析报告") {
                 Button("查看历史报告") {
-                    openWindow(id: "ai-history")
-                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow.replacingSource(id: "ai-history")
                 }
             }
             section("AI 服务") { AISettingsView(isEmbedded: true) }

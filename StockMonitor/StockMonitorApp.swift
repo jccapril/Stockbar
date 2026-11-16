@@ -90,6 +90,14 @@ struct StockbarApp: App {
         .defaultSize(width: 620, height: 640)
         .windowResizability(.contentMinSize)
 
+        Window("当时的 AI 分析", id: "ai-marker") {
+            if let marker = appState.selectedReportMarker {
+                TAnalysisMarkerDetail(marker: marker)
+                    .preferredColorScheme(appState.config.theme.preferredColorScheme)
+            }
+        }
+        .windowResizability(.contentSize)
+
         Window("AI 历史报告", id: "ai-history") {
             AIReportHistoryView()
                 .environmentObject(appState.aiReports)
@@ -134,5 +142,15 @@ struct StockbarApp: App {
             }
         }
         .windowResizability(.contentSize)
+    }
+}
+
+extension OpenWindowAction {
+    @MainActor
+    func replacingSource(id: String) {
+        let source = NSApp.currentEvent?.window ?? NSApp.keyWindow
+        source?.orderOut(nil)
+        self(id: id)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

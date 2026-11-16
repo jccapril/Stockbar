@@ -2,7 +2,7 @@
 import Foundation
 import Security
 
-/// 只接收显式挑选的公开行情字段，持仓数据不进入请求。
+/// 分析请求仅包含选定的公开行情字段。
 enum AIAnalysisService {
     struct Analysis: Codable {
         let text: String
@@ -10,9 +10,20 @@ enum AIAnalysisService {
         let generatedAt: Date
         let model: String
         let horizon: String
+        var horizonTitle: String {
+            switch horizon {
+            case AIAnalysisService.tHorizon: "买卖提示"
+            case AIAnalysisService.positionTHorizon: "做T"
+            default: horizon
+            }
+        }
+
         var intradayAsOf: Date?
         var intradayReferencePrice: Double?
         var intradaySummary: String?
+        var tDecision: TDecision?
+        var assumedFill: TFill?
+        var endingPosition: TPosition?
     }
 
     struct Failure: LocalizedError {
@@ -74,14 +85,26 @@ enum AIAnalysisService {
         address: String,
         model: String,
         horizon: String,
+        reports: [SavedAIReport] = [],
+        position: TPosition? = nil,
+        fills: [TFill] = [],
     ) async throws -> Analysis {
         let url = try endpoint(address)
         let token = try key(for: url)
-        guard !token.isEmpty, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !token.isEmpty,
+              horizon == positionTHorizon || !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(message: "请先在 AI 设置中保存模型和 API Key。")
         }
-        if horizon == tHorizon {
-            return try await analyzeT(stock: stock, url: url, token: token, model: model)
+        if horizon == positionTHorizon {
+            guard let position else { throw Failure(message: "请先填写做T持仓和可用资金。") }
+            return try await analyzeT(
+                stock: stock,
+                url: url,
+                token: token,
+                reports: reports,
+                position: position,
+                fills: fills,
+            )
         }
         let candles = try await ChartService.fetchCandles(stock: stock, period: .daily)
         let activity = try await fetchActivity(stock: stock)

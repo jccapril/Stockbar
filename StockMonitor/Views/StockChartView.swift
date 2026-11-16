@@ -14,6 +14,12 @@ struct StockChartView: View {
     @State private var loadFailed = false
     @State private var period: ChartPeriod = .intraday
     @State private var hoveredPoint: MinutePoint?
+    @State private var chartReports: [SavedAIReport] = []
+    @AppStorage("showAIAnalysisMarkers") private var showAIAnalysisMarkers = true
+
+    private var aiMarkers: [TAnalysisChartMarker] {
+        showAIAnalysisMarkers ? TAnalysisChartMarker.make(reports: chartReports, points: points) : []
+    }
 
     init(
         stock: Stock,
@@ -37,7 +43,7 @@ struct StockChartView: View {
         // 五日数据已按交易日连接，跳过周末和夜间空档。
         if period == .fiveDays { return 0...max(points.last?.id ?? 0, 1) }
         switch stock.market {
-        case .aStock:  return 0...239
+        case .aStock:  return 0...max(239, points.last?.id ?? 239)
         case .hkStock: return 0...329
         case .usStock: return 0...959
         case .krStock: return 0...389
@@ -85,6 +91,15 @@ struct StockChartView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 8)
             .padding(.bottom, 6)
+            if stock.market == .aStock, period.candlePeriod == nil {
+                HStack {
+                    Toggle("做T买卖点", isOn: $showAIAnalysisMarkers).toggleStyle(.checkbox)
+                    Spacer()
+                }
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+            }
             Divider()
             chartAreaView
                 .frame(minHeight: isExpanded ? 280 : 200, maxHeight: isExpanded ? .infinity : 200)
@@ -92,7 +107,14 @@ struct StockChartView: View {
                 statsRow
             }
         }
-        .task(id: period) { await load() }
+        .task(id: "\(period.rawValue)-\(chartReports.first?.id.uuidString ?? "")") { await load() }
+        .onReceive(appState.aiReports.$reports) { reports in
+            chartReports = reports
+                .filter {
+                $0.stockID == stock.id && $0.analysis.horizon == AIAnalysisService.positionTHorizon && $0.analysis
+                .tDecision?.action.marker != nil
+                }
+        }
         .onChange(of: period) { ChartPreferences.period = $0 }
     }
 
@@ -121,16 +143,14 @@ struct StockChartView: View {
 
             Button("AI 分析") {
                 appState.selectedAIStock = stock
-                openWindow(id: "ai-analysis")
-                NSApp.activate(ignoringOtherApps: true)
+                openWindow.replacingSource(id: "ai-analysis")
             }
             .buttonStyle(.plain)
             .help("分析当前股票的技术面买卖信号")
 
             Button {
                 appState.selectedAlertStock = stock
-                openWindow(id: "price-alerts")
-                NSApp.activate(ignoringOtherApps: true)
+                openWindow.replacingSource(id: "price-alerts")
             } label: {
                 Image(systemName: "bell")
             }
@@ -142,8 +162,7 @@ struct StockChartView: View {
                 Button {
                     appState.expandedChartStock = stock
                     appState.expandedChartPeriod = period
-                    openWindow(id: "expanded-chart")
-                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow.replacingSource(id: "expanded-chart")
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                 }
@@ -196,7 +215,8 @@ struct StockChartView: View {
     ]
 
     private var lineChart: some View {
-        let prices = points.map(\.price)
+        let markers = aiMarkers
+        let prices = points.map(\.price) + markers.map(\.price)
         let minP = prices.min() ?? preClose
         let maxP = prices.max() ?? preClose
         let maxDev = max(abs(maxP - preClose), abs(preClose - minP), preClose * 0.005)
@@ -277,6 +297,11 @@ struct StockChartView: View {
                         .foregroundStyle(Color.secondary.opacity(0.5))
                 }
             }
+            ForEach(markers) { marker in
+                PointMark(x: .value("分析时间", marker.pointID), y: .value("分析参考价", marker.price))
+                    .foregroundStyle(Color(marker.isBuy ? appState.config.upColorName : appState.config.downColorName))
+                    .symbolSize(12)
+            }
             if let point = hoveredPoint {
                 RuleMark(x: .value("时间", point.id))
                     .foregroundStyle(Color.secondary)
@@ -290,7 +315,10 @@ struct StockChartView: View {
             }
         }
         .chartXScale(domain: fullDayRange)
-        .chartYScale(domain: yMin...yMax)
+        .chartYScale(
+            domain: yMin...yMax,
+            range: .plotDimension(startPadding: markers.isEmpty ? 0 : 22, endPadding: markers.isEmpty ? 0 : 22),
+        )
         .chartXAxis {
             AxisMarks(values: labelPositions) { value in
                 if period == .intraday {
@@ -317,12 +345,12 @@ struct StockChartView: View {
             }
         }
         .chartOverlay { proxy in
-            hoverOverlay(proxy: proxy)
+            hoverOverlay(proxy: proxy, markers: markers)
         }
         .onChange(of: period) { _ in hoveredPoint = nil }
     }
 
-    private func hoverOverlay(proxy: ChartProxy) -> some View {
+    private func hoverOverlay(proxy: ChartProxy, markers: [TAnalysisChartMarker]) -> some View {
         GeometryReader { geometry in
             let plot = geometry[proxy.plotAreaFrame]
             ZStack(alignment: .topLeading) {
@@ -344,6 +372,41 @@ struct StockChartView: View {
                             hoveredPoint = nil
                         }
                     }
+                ForEach(markers) { marker in
+                    if let x = proxy.position(forX: marker.pointID), let y = proxy.position(forY: marker.price) {
+                        let anchorX = plot.minX + x
+                        let labelInset = CGFloat(marker.label.count * 5 + 12)
+                        let labelY = marker.isBuy ? plot.maxY - 9 : plot.minY + 9
+                        Path { path in
+                            path.move(to: CGPoint(x: anchorX, y: plot.minY + y))
+                            path.addLine(to: CGPoint(x: anchorX, y: labelY))
+                        }
+                        .stroke(
+                            Color(marker.isBuy ? appState.config.upColorName : appState.config.downColorName)
+                            .opacity(0.65),
+                            style: StrokeStyle(lineWidth: 1, dash: [3, 3]),
+                        )
+                        .allowsHitTesting(false)
+                        Button {
+                            appState.selectedReportMarker = marker
+                            openWindow.replacingSource(id: "ai-marker")
+                        } label: {
+                            Text(marker.label + (marker.reports.count > 1 ? "·\(marker.reports.count)" : ""))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Color(marker.isBuy ? appState.config.upColorName : appState.config.downColorName),
+                                    in: RoundedRectangle(cornerRadius: 4),
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .help("查看当时的 AI 分析")
+                        .accessibilityLabel("\(marker.label) · 查看当时的 AI 分析")
+                        .position(x: min(max(anchorX, plot.minX + labelInset), plot.maxX - labelInset), y: labelY)
+                    }
+                }
                 if let point = hoveredPoint, let x = proxy.position(forX: point.id) {
                     hoverDetails(point)
                         .frame(width: 145, alignment: .leading)

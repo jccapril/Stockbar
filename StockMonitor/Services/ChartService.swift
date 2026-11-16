@@ -132,6 +132,7 @@ enum ChartService {
               let dataObj = root["data"] as? [String: Any],
               let stockData = dataObj[code] as? [String: Any],
               let innerData = stockData["data"] as? [String: Any],
+              let day = innerData["date"] as? String,
               let lines = innerData["data"] as? [String]
         else { throw URLError(.cannotParseResponse) }
 
@@ -143,7 +144,7 @@ enum ChartService {
             let parts = line.components(separatedBy: " ")
             guard parts.count >= 2,
                   let price = Double(parts[1]), price > 0 else { continue }
-            points.append(MinutePoint(id: i, time: parts[0], price: price))
+            points.append(MinutePoint(id: i, time: parts[0], price: price, day: day))
         }
 
         guard !points.isEmpty else { throw URLError(.cannotParseResponse) }

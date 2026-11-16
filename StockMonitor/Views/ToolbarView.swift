@@ -8,8 +8,7 @@ struct ToolbarView: View {
     var body: some View {
         HStack {
             Button {
-                openWindow(id: "add-stock")
-                NSApp.activate(ignoringOtherApps: true)
+                openWindow.replacingSource(id: "add-stock")
             } label: {
                 Label("新增", systemImage: "plus").font(.system(size: 12))
             }
@@ -40,9 +39,7 @@ struct ToolbarView: View {
 
             Button {
                 // 先收起当前菜单栏面板，再打开设置，避免两个界面同时停留。
-                NSApp.keyWindow?.orderOut(nil)
-                openWindow(id: "settings")
-                NSApp.activate(ignoringOtherApps: true)
+                openWindow.replacingSource(id: "settings")
             } label: {
                 Label("设置", systemImage: "gearshape").font(.system(size: 12))
             }
