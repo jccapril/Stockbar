@@ -16,12 +16,11 @@ struct ToolbarView: View {
             .help("新增股票")
             Spacer()
             Button {
-                appState.forceRefresh()
+                openWindow.replacingSource(id: "market-window")
             } label: {
-                Label("刷新", systemImage: "arrow.clockwise").font(.system(size: 12))
+                Label("主窗口", systemImage: "macwindow").font(.system(size: 12))
             }
             .buttonStyle(.plain)
-            .disabled(appState.isLoading)
 
             Spacer()
 

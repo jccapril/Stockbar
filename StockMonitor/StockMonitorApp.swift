@@ -52,6 +52,14 @@ struct StockbarApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        Window("Stockbar 行情", id: "market-window") {
+            MarketWindowView()
+                .environmentObject(appState)
+                .preferredColorScheme(appState.config.theme.preferredColorScheme)
+        }
+        .defaultSize(width: 1120, height: 720)
+        .windowResizability(.contentMinSize)
+
         Window("Stockbar 设置", id: "settings") {
             SettingsView()
                 .environmentObject(appState)

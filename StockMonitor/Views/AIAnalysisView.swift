@@ -241,9 +241,10 @@ struct AIAnalysisView: View {
     }
 }
 
-private struct TFillHistoryView: View {
+struct TFillHistoryView: View {
     let stock: Stock
     let store: AIReportStore
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     @State private var fills: [TFill] = []
     @State private var side = TFill.Side.buy
@@ -254,24 +255,27 @@ private struct TFillHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("\(stock.name) · 成交记录").font(.headline)
-                Spacer()
-                Button("完成") { dismiss() }
-            }
-            DatePicker("成交时间", selection: $time, in: ...Date())
-            HStack {
-                Picker("方向", selection: $side) {
-                    ForEach(TFill.Side.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            if !embedded {
+                HStack {
+                    Text("\(stock.name) · 成交记录").font(.headline)
+                    Spacer()
+                    Button("完成") { dismiss() }
                 }
-                .labelsHidden().frame(width: 85)
-                TextField("成交数量", text: $quantity)
-                TextField("成交价", text: $price)
-                Button("记录成交") { record() }
+                DatePicker("成交时间", selection: $time, in: ...Date())
+                HStack {
+                    Picker("方向", selection: $side) {
+                        ForEach(TFill.Side.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden().frame(width: 85)
+                    TextField("成交数量", text: $quantity)
+                    TextField("成交价", text: $price)
+                    Button("记录成交") { record() }
+                }
             }
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
-            Text("做T分析会将这些成交明细发送至你配置的 AI 服务。")
+            if !embedded { Text("做T分析会将这些成交明细发送至你配置的 AI 服务。")
                 .font(.caption).foregroundStyle(.secondary)
+            }
             List(fills.reversed()) { fill in
                 HStack {
                     Text(fill.time.formatted(date: .numeric, time: .standard))
@@ -281,7 +285,7 @@ private struct TFillHistoryView: View {
                     )
                     if fill.assumed == true {
                         Text("AI 模拟").foregroundStyle(.secondary)
-                    } else {
+                    } else if !embedded {
                         Button("删除", role: .destructive) {
                         do {
                             try store.removeFill(fill, for: stock)
@@ -294,8 +298,8 @@ private struct TFillHistoryView: View {
             .overlay { if fills.isEmpty, error.isEmpty { Text("暂无成交记录").foregroundStyle(.secondary) } }
         }
         .padding(20)
-        .frame(width: 540, height: 400)
-        .onAppear { reload() }
+        .frame(width: embedded ? nil : 540, height: embedded ? nil : 400)
+        .onReceive(store.$reports) { _ in Task { @MainActor in reload() } }
     }
 
     private func record() {
@@ -319,9 +323,10 @@ private struct TFillHistoryView: View {
     }
 }
 
-private struct DailyTProfitView: View {
+struct DailyTProfitView: View {
     let stock: Stock
     @ObservedObject var store: AIReportStore
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -329,10 +334,12 @@ private struct DailyTProfitView: View {
         let unit = store.reports.first { $0.stockID == stock.id && $0.analysis.assumedFill != nil }?.analysis.tDecision?
             .quantityUnit ?? "股"
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("\(stock.name) · 每日做T收益").font(.headline)
-                Spacer()
-                Button("完成") { dismiss() }
+            if !embedded {
+                HStack {
+                    Text("\(stock.name) · 每日做T收益").font(.headline)
+                    Spacer()
+                    Button("完成") { dismiss() }
+                }
             }
             Text("按当日 AI 模拟成交先进先出配对，仅统计已配对价差，未扣手续费及税费。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -361,6 +368,6 @@ private struct DailyTProfitView: View {
             }
         }
         .padding(20)
-        .frame(width: 580, height: 380)
+        .frame(width: embedded ? nil : 580, height: embedded ? nil : 380)
     }
 }

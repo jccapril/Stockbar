@@ -6,6 +6,7 @@ struct StockGroupsSettingsView: View {
     @State private var name = ""
     @State private var editingID: String?
     @State private var error = ""
+    @State private var targetedGroupID: String?
     @State private var deleting: CustomStockGroup?
 
     var body: some View {
@@ -23,12 +24,30 @@ struct StockGroupsSettingsView: View {
             if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red) }
             ForEach(appState.config.customStockGroups) { group in
                 HStack {
+                    Image(systemName: "line.3.horizontal")
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                        .contentShape(Rectangle())
+                        .draggable(group.id)
+                        .help("拖动调整分组顺序")
                     Label(group.name, systemImage: "folder")
                     Text("\(appState.stocks.count(where: { $0.customGroupID == group.id })) 只")
                         .foregroundStyle(.secondary)
                     Spacer()
+                    GroupOrderButtons(groupID: group.id).labelStyle(.iconOnly)
                     Button("重命名") { editingID = group.id; name = group.name; error = "" }
                     Button("删除", role: .destructive) { deleting = group }
+                }
+                .padding(.vertical, 3)
+                .background(targetedGroupID == group.id ? Color.accentColor.opacity(0.12) : .clear)
+                .dropDestination(for: String.self) { ids, _ in
+                    guard let id = ids.first,
+                          appState.config.customStockGroups.contains(where: { $0.id == id }) else { return false }
+                    appState.moveStockGroup(id, to: group.id)
+                    return true
+                } isTargeted: { targeted in
+                    if targeted { targetedGroupID = group.id }
+                    else if targetedGroupID == group.id { targetedGroupID = nil }
                 }
             }
         }
@@ -66,5 +85,27 @@ struct StockGroupsSettingsView: View {
         editingID = nil
         name = ""
         error = ""
+    }
+}
+
+struct GroupOrderButtons: View {
+    let groupID: String
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        let groups = appState.config.customStockGroups
+        if let index = groups.firstIndex(where: { $0.id == groupID }) {
+            ForEach([-1, 1], id: \.self) { offset in
+                let destination = index + offset
+                let title = offset < 0 ? "上移分组" : "下移分组"
+                Button {
+                    appState.moveStockGroup(groupID, to: groups[destination].id)
+                } label: {
+                    Label(title, systemImage: offset < 0 ? "arrow.up" : "arrow.down")
+                }
+                .disabled(!groups.indices.contains(destination))
+                .help(title)
+            }
+        }
     }
 }

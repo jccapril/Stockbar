@@ -4,6 +4,7 @@ import SwiftUI
 struct StockChartView: View {
     let stock: Stock
     let onClose: () -> Void
+    let marketWindow: Bool
     let isExpanded: Bool
     @EnvironmentObject var appState: AppState
     @Environment(\.openWindow) private var openWindow
@@ -26,7 +27,9 @@ struct StockChartView: View {
         onClose: @escaping () -> Void,
         isExpanded: Bool = false,
         initialPeriod: ChartPeriod? = nil,
+        marketWindow: Bool = false,
     ) {
+        self.marketWindow = marketWindow
         self.stock = stock
         self.onClose = onClose
         self.isExpanded = isExpanded
@@ -91,7 +94,8 @@ struct StockChartView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 8)
             .padding(.bottom, 6)
-            if stock.market == .aStock, period.candlePeriod == nil {
+            if stock.market == .aStock, period.candlePeriod == nil,
+               !(marketWindow && AppState.marketIndices.contains(where: { $0.id == stock.id })) {
                 HStack {
                     Toggle("做T买卖点", isOn: $showAIAnalysisMarkers).toggleStyle(.checkbox)
                     Spacer()
@@ -132,7 +136,7 @@ struct StockChartView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(stock.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: marketWindow ? 22 : 12, weight: .semibold))
                     .lineLimit(1)
                 Text(stock.id)
                     .font(.system(size: 9))
@@ -141,23 +145,24 @@ struct StockChartView: View {
 
             Spacer()
 
-            Button("AI 分析") {
-                appState.selectedAIStock = stock
-                openWindow.replacingSource(id: "ai-analysis")
-            }
-            .buttonStyle(.plain)
-            .help("分析当前股票的技术面买卖信号")
+            if !marketWindow || !AppState.marketIndices.contains(where: { $0.id == stock.id }) {
+                Button("AI 分析") {
+                    appState.selectedAIStock = stock
+                    openWindow.replacingSource(id: "ai-analysis")
+                }
+                .buttonStyle(.plain)
+                .help("分析当前股票的技术面买卖信号")
 
-            Button {
-                appState.selectedAlertStock = stock
-                openWindow.replacingSource(id: "price-alerts")
-            } label: {
-                Image(systemName: "bell")
+                Button {
+                    appState.selectedAlertStock = stock
+                    openWindow.replacingSource(id: "price-alerts")
+                } label: {
+                    Image(systemName: "bell")
+                }
+                .buttonStyle(.plain)
+                .help("价格提醒")
+                .accessibilityLabel("价格提醒")
             }
-            .buttonStyle(.plain)
-            .help("价格提醒")
-            .accessibilityLabel("价格提醒")
-
             if !isExpanded {
                 Button {
                     appState.expandedChartStock = stock
@@ -174,7 +179,7 @@ struct StockChartView: View {
             if let q = quote {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text(q.formattedPrice)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: marketWindow ? 24 : 13, weight: .medium))
                         .foregroundColor(appState.quoteColor(for: q))
                     Text(q.formattedPercent)
                         .font(.system(size: 10))

@@ -9,6 +9,16 @@ extension AppState {
         stocks[index].customGroupID = groupID
     }
 
+    func moveStockGroup(_ id: String, to destinationID: String) {
+        var groups = config.customStockGroups
+        guard let source = groups.firstIndex(where: { $0.id == id }),
+              let destination = groups.firstIndex(where: { $0.id == destinationID }),
+              source != destination else { return }
+        let group = groups.remove(at: source)
+        groups.insert(group, at: destination)
+        config.customStockGroups = groups
+    }
+
     func deleteStockGroup(_ groupID: String) {
         var updated = stocks
         for index in updated.indices where updated[index].customGroupID == groupID {
